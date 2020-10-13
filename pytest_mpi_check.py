@@ -19,3 +19,10 @@ def pytest_addoption(parser):
 @pytest.fixture
 def bar(request):
     return request.config.option.dest_foo
+
+# --------------------------------------------------------------------------
+@pytest.mark.tryfirst
+def pytest_runtestloop(session):
+  """
+  """
+  print("Mon super sous-modules")
