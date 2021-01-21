@@ -53,7 +53,7 @@ def prepare_subcomm_for_tests(session):
   for i, item in enumerate(session.items):
     n_proc_test = get_n_proc_for_test(item)
 
-    print("n_proc_test ::", n_proc_test)
+    #print("n_proc_test ::", n_proc_test)
     if(beg_next_rank + n_proc_test > n_rank):
       beg_next_rank = 0
 
@@ -68,7 +68,7 @@ def prepare_subcomm_for_tests(session):
 
     if(comm_split != MPI.COMM_NULL):
       assert comm_split.size == n_proc_test
-      print(f"[{i_rank}] Create group with size : {comm_split.size} for test : {item.nodeid}" )
+      #print(f"[{i_rank}] Create group with size : {comm_split.size} for test : {item.nodeid}" )
 
     item._sub_comm = comm_split
     beg_next_rank += n_proc_test
@@ -89,10 +89,11 @@ def prepare_subcomm_for_tests(session):
 def pytest_runtestloop(session):
   """
   """
-  print("Mon super sous-modules")
+  #print("Mon super sous-modules")
   prepare_subcomm_for_tests(session)
 
   for i, item in enumerate(session.items):
-    print(i)
+    #print(i)
+    pass
 
   return True
