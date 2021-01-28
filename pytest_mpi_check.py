@@ -24,32 +24,38 @@ def get_n_proc_for_test(item: Item) -> int :
   """
   """
   n_proc_test = 1
+
   # print("dir(item)::", dir(item))
   # print("dir(item)::", dir(item.callspec))
   try:
     # The way to hooks parametrize : TOKEEP
     # print("parametrize value to use ::", item.callspec.getparam('make_sub_comm'))
-    pass
+    # print("parametrize value to use ::", item.callspec.getparam('sub_comm'))
+    n_proc_test = item.callspec.getparam('sub_comm')
   except AttributeError:
     pass
   except ValueError:
     pass
+
+  return n_proc_test
+
+  # OOODLLLLDDDD
   # exit(2)
   # print("dir(item)::", dir(item.keywords))
-  for mark in item.iter_markers(name="mpi_test"):
-    if mark.args:
-      raise ValueError("mpi mark does not take positional args")
-    n_proc_test = mark.kwargs.get('comm_size')
+  # for mark in item.iter_markers(name="mpi_test"):
+  #   if mark.args:
+  #     raise ValueError("mpi mark does not take positional args")
+  #   n_proc_test = mark.kwargs.get('comm_size')
 
-    # print("**** item:: ", dir(item))
-    # print("**** request:: ", dir(item._pyfuncitem))
-    # print("**** request:: ", dir(item._pyfuncitem.funcargnames))
-    # print("**** request:: ", item._pyfuncitem.funcargnames)
-    # print("**** request:: ", item._pyfuncitem.funcargs)
-    # print("mark.kwargs::", mark.kwargs)
-    if(n_proc_test is None):
-      raise ValueError("We need to specify a comm_size for the test")
-  return n_proc_test
+  #   # print("**** item:: ", dir(item))
+  #   # print("**** request:: ", dir(item._pyfuncitem))
+  #   # print("**** request:: ", dir(item._pyfuncitem.funcargnames))
+  #   # print("**** request:: ", item._pyfuncitem.funcargnames)
+  #   # print("**** request:: ", item._pyfuncitem.funcargs)
+  #   # print("mark.kwargs::", mark.kwargs)
+  #   if(n_proc_test is None):
+  #     raise ValueError("We need to specify a comm_size for the test")
+  # return n_proc_test
 
 # --------------------------------------------------------------------------
 def prepare_subcomm_for_tests(session):
@@ -103,6 +109,23 @@ def prepare_subcomm_for_tests(session):
 # window : 1 1 1 0 0 0 0
 # window : 1 1 2 0 0 0 0 --> Communique MPI_Accumulate()
 
+@pytest.mark.tryfirst
+def pytest_collection_modifyitems(config, items):
+  """
+  Skip tests depending on what options are chosen
+  """
+  comm   = MPI.COMM_WORLD
+  n_rank = comm.size
+  i_rank = comm.rank
+
+  # with_mpi = config.getoption(WITH_MPI_ARG)
+  # only_mpi = config.getoption(ONLY_MPI_ARG)
+  for item in items:
+
+    n_proc_test = get_n_proc_for_test(item)
+    print("+++++", n_proc_test, item.nodeid)
+    if(n_proc_test > n_rank):
+      item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}"))
 
 # --------------------------------------------------------------------------
 @pytest.mark.tryfirst
@@ -123,7 +146,7 @@ def pytest_runtestloop(session):
   # print(dir(session.session))
   for i, item in enumerate(session.items):
     # if(comm.rank == i):
-      # print("***************************", item.nodeid)
+      print("\n***************************", item.nodeid)
       # print("***************************", item._sub_comm)
       # print(i, item, dir(item), item.name, item.originalname)
       # print("launch on {0} item : {1}".format(comm.rank, item))
