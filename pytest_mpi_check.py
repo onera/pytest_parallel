@@ -107,7 +107,7 @@ class HTMLReportMPI(HTMLReport):
           print("test_report.longrepr :: ", test_report.longrepr)
           # greport.longrepr.addsection(f" rank {test_name[0]}", test_report.longrepr)
           # greport.longrepr.addsection(f" rank {test_name[0]}", "oooo")
-          if greport.longrepr:
+          if greport.longrepr and not isinstance(greport.longrepr, tuple):
             greport.longrepr.addsection(f" rank {test_name[0]}", str(test_report.longrepr))
           else:
             greport.longrepr = test_report.longrepr
