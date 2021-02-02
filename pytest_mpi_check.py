@@ -179,7 +179,7 @@ class LogXMLMPI(LogXML):
     """
     Little hack to not dstroy internal map
     """
-    print("LogXMLMPI::finalize")
+    # print("LogXMLMPI::finalize")
     pass
 
   def pytest_sessionfinish(self, session):
