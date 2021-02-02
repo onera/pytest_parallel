@@ -168,7 +168,7 @@ class LogXMLMPI(LogXML):
       # > Attention report peut être gros (stdout dedans etc ...)
       req = self.comm.isend(report, dest=0, tag=self.shift+self.n_send)
       self.n_send += 1
-      print("Send tag ::", self.shift+self.n_send)
+      # print("Send tag ::", self.shift+self.n_send)
 
       self.mpi_requests[report.nodeid].append(req)
       # print("ooooo", report.nodeid)
@@ -205,7 +205,7 @@ class LogXMLMPI(LogXML):
         tag = 1000+i_msg
         is_ok_to_recv = self.comm.Iprobe(MPI.ANY_SOURCE, tag, status=status)
         if is_ok_to_recv:
-          print("[",i_msg, "] - Status :: ", status.Get_source(), status.Get_tag())
+          # print("[",i_msg, "] - Status :: ", status.Get_source(), status.Get_tag())
           report = self.comm.recv(source=status.Get_source(), tag=status.Get_tag())
           # > On fait un dictionnaire en attendant de faire list + tri indirect
           if report:
