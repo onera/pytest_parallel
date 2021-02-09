@@ -50,6 +50,7 @@ def pytest_collection_modifyitems(config, items):
 
   # with_mpi = config.getoption(WITH_MPI_ARG)
   # only_mpi = config.getoption(ONLY_MPI_ARG)
+  # Rajouter nombre proc max dans les infos
   for item in items:
 
     n_proc_test = get_n_proc_for_test(item)
@@ -66,6 +67,10 @@ def pytest_unconfigure(config):
     del config._html
     config.pluginmanager.unregister(html)
 
+  xml = getattr(config, "_xml", None)
+  if xml:
+    del config._xml
+    config.pluginmanager.unregister(xml)
 
 # --------------------------------------------------------------------------
 @pytest.mark.tryfirst

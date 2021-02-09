@@ -26,10 +26,10 @@ class HTMLReportMPI(HTMLReport):
     if(self.comm.Get_rank() != 0):
       # print(dir(self.comm))
       # > Attention report peut être gros (stdout dedans etc ...)
-      req = self.comm.isend(report, dest=0, tag=self.n_send)
+      self.comm.send(report, dest=0, tag=self.n_send)
       self.n_send += 1
 
-      self.mpi_requests[report.nodeid].append(req)
+      # self.mpi_requests[report.nodeid].append(req)
       # print("ooooo", report.nodeid)
 
     HTMLReport.pytest_runtest_logreport(self, report)
@@ -40,23 +40,19 @@ class HTMLReportMPI(HTMLReport):
     nb_recv_tot = self.comm.reduce(self.n_send, root=0)
     # print("nb_recv_tot::", nb_recv_tot)
 
-    for test_name, reqs in self.mpi_requests.items():
-      for req in reqs:
-        # print(" *********************************** WAIT ")
-        req.wait()
-
     # Si rang 0 il faut Probe tout
     # print(self.comm.Iprobe.__doc__)
     # print(dir(self.comm))
+    self.comm.Barrier()
 
     # ooooooooooooooooooooooooooooooooooooooooooooooooooooooo
     if self.comm.Get_rank() == 0:
       for i_msg in range(nb_recv_tot):
         status = MPI.Status()
         # print(dir(status))
-        is_ok_to_recv = self.comm.Iprobe(MPI.ANY_SOURCE, MPI.ANY_TAG, status=status)
+        is_ok_to_recv = self.comm.probe(MPI.ANY_SOURCE, MPI.ANY_TAG, status=status)
         if is_ok_to_recv:
-          # print("Status :: ", status.Get_source(), status.Get_tag())
+          print("Status :: ", status.Get_source(), status.Get_tag())
           report = self.comm.recv(source=status.Get_source(), tag=status.Get_tag())
           # > On fait un dictionnaire en attendant de faire list + tri indirect
           if report:
