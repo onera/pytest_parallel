@@ -4,8 +4,9 @@ from ._decorator import sub_comm
 
 from mpi4py import MPI
 
-from .html_mpi  import HTMLReportMPI
-from .junit_mpi import LogXMLMPI
+from .html_mpi     import HTMLReportMPI
+from .junit_mpi    import LogXMLMPI
+from .mpi_reporter import MPIReporter
 
 from .utils import get_n_proc_for_test, prepare_subcomm_for_tests
 
@@ -16,25 +17,16 @@ from _pytest._code.code import ExceptionChainRepr
 from _pytest.terminal   import TerminalReporter
 
 # --------------------------------------------------------------------------
-def pytest_addoption(parser):
-  group = parser.getgroup('mpi-check')
-  group.addoption(
-                  '--foo',
-                  action='store',
-                  dest='dest_foo',
-                  default='2020',
-                  help='Set the value for the fixture "bar".'
-                  )
-
-  parser.addini('HELLO', 'Dummy pytest.ini setting')
-
-# @pytest.mark.trylast
-@pytest.mark.tryfirst
-def pytest_configure(config):
-
-  print("pytest_configure::pytest_mpi_check")
-
-  comm = MPI.COMM_WORLD
+# def pytest_addoption(parser):
+#   group = parser.getgroup('mpi-check')
+#   group.addoption(
+#                   '--foo',
+#                   action='store',
+#                   dest='dest_foo',
+#                   default='2020',
+#                   help='Set the value for the fixture "bar".'
+#                   )
+#   parser.addini('HELLO', 'Dummy pytest.ini setting')
 
 # --------------------------------------------------------------------------
 @pytest.mark.tryfirst
@@ -46,6 +38,7 @@ def pytest_collection_modifyitems(config, items):
   n_rank = comm.size
   i_rank = comm.rank
 
+  # > This fonction do a kind of sheduling because if comm is null the test is not executed
   prepare_subcomm_for_tests(items)
 
   # with_mpi = config.getoption(WITH_MPI_ARG)
@@ -58,37 +51,23 @@ def pytest_collection_modifyitems(config, items):
     if(n_proc_test > n_rank):
       item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}"))
 
+# --------------------------------------------------------------------------
+# @pytest.mark.tryfirst
+# def pytest_runtestloop(session):
+#   """
+#   """
+#   comm = MPI.COMM_WORLD
+#   # print("pytest_runtestloop", comm.rank)
+
+#   for i, item in enumerate(session.items):
+#       item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
+#       if session.shouldfail:
+#         raise session.Failed(session.shouldfail)
+#       if session.shouldstop:
+#         raise session.Interrupted(session.shouldstop)
+#   return True
 
 # --------------------------------------------------------------------------
-@pytest.mark.tryfirst
-def pytest_unconfigure(config):
-  html = getattr(config, "_html", None)
-  if html:
-    del config._html
-    config.pluginmanager.unregister(html)
-
-  xml = getattr(config, "_xml", None)
-  if xml:
-    del config._xml
-    config.pluginmanager.unregister(xml)
-
-# --------------------------------------------------------------------------
-@pytest.mark.tryfirst
-def pytest_runtestloop(session):
-  """
-  """
-  comm = MPI.COMM_WORLD
-  # print("pytest_runtestloop", comm.rank)
-
-  for i, item in enumerate(session.items):
-      item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
-      if session.shouldfail:
-        raise session.Failed(session.shouldfail)
-      if session.shouldstop:
-        raise session.Interrupted(session.shouldstop)
-  return True
-
-
 @pytest.mark.trylast
 def pytest_configure(config):
 
@@ -105,6 +84,17 @@ def pytest_configure(config):
 
     config.pluginmanager.unregister(standard_reporter)
     config.pluginmanager.register(instaprogress_reporter, 'terminalreporter')
+  # --------------------------------------------------------------------------------
+
+  # --------------------------------------------------------------------------------
+  mpi_reporter = getattr(config, "_mpi_reporter", None)
+  if mpi_reporter:
+    del config._mpi_reporter
+    config.pluginmanager.unregister(mpi_reporter)
+
+  # prevent opening mpi_reporterpath on worker nodes (xdist)
+  config._mpi_reporter = MPIReporter(comm)
+  config.pluginmanager.register(config._mpi_reporter)
   # --------------------------------------------------------------------------------
 
   # --------------------------------------------------------------------------------
@@ -130,7 +120,7 @@ def pytest_configure(config):
 
     if not hasattr(config, "workerinput"):
       # prevent opening htmlpath on worker nodes (xdist)
-      config._html = HTMLReportMPI(comm, htmlpath, config)
+      config._html = HTMLReportMPI(comm, htmlpath, config, config._mpi_reporter)
       config.pluginmanager.register(config._html)
   # --------------------------------------------------------------------------------
 
@@ -145,11 +135,13 @@ def pytest_configure(config):
   # prevent opening xmllog on slave nodes (xdist)
   if xmlpath and not hasattr(config, "slaveinput"):
       junit_family = config.getini("junit_family")
+      junit_family = "xunit2"
       if not junit_family:
           _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
-          junit_family = "xunit1"
+      _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
       config._xml = LogXMLMPI(
           comm,
+          config._mpi_reporter,
           xmlpath,
           config.option.junitprefix,
           config.getini("junit_suite_name"),
@@ -160,3 +152,16 @@ def pytest_configure(config):
       )
       config.pluginmanager.register(config._xml)
   # --------------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+@pytest.mark.tryfirst
+def pytest_unconfigure(config):
+  html = getattr(config, "_html", None)
+  if html:
+    del config._html
+    config.pluginmanager.unregister(html)
+
+  xml = getattr(config, "_xml", None)
+  if xml:
+    del config._xml
+    config.pluginmanager.unregister(xml)
