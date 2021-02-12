@@ -58,7 +58,10 @@ class LogXMLMPI(LogXML):
         # Seek the current report
         # print(type(self.node_reporters))
         # print(self.node_reporters)
+        # try:
         lreport = self.node_reporters[(test_name[1], None)]
+        # except KeyError:
+        #   lreport = test_report
 
         # print(type(test_report))
 

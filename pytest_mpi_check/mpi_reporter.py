@@ -18,7 +18,9 @@ class MPIReporter(object):
     # print("MPIReporter::pytest_runtest_logreport", report.when)
 
     # if(self.comm.Get_rank() != 0):
-    if(self.comm.Get_rank() >= 0 and (report.skipped == False)):
+    # Egalemnt possible d'envoyer que si il est execute (donc MPI_COMM != NULL )
+    # Si skip uniquement le rang 0 le fait
+    if(self.comm.Get_rank() >= 0 and (report.skipped == False) and (report.when == "call")):
       # > Attention report peut être gros (stdout dedans etc ...)
       self.comm.send(report, dest=0, tag=self.n_send)
       self.n_send += 1
@@ -28,6 +30,7 @@ class MPIReporter(object):
     """
     """
     nb_recv_tot = self.comm.reduce(self.n_send, root=0)
+    # print("nb_recv_tot::", nb_recv_tot)
 
     self.comm.Barrier()
 
@@ -40,7 +43,12 @@ class MPIReporter(object):
           report = self.comm.recv(source=status.Get_source(), tag=status.Get_tag())
           # > On fait un dictionnaire en attendant de faire list + tri indirect
           if report:
-            self.mpi_reports[(status.Get_source(),report.nodeid)].append(report)
+            # self.mpi_reports[(status.Get_source(),report.nodeid)].append(report)
+            self.mpi_reports[report.nodeid].append((status.Get_source(), report))
+
+      # > Sort by incrizing rank number
+      for node_id, report_list in self.mpi_reports.items():
+        report_list.sort(key = lambda tup: tup[0])
 
     self.comm.Barrier()
 

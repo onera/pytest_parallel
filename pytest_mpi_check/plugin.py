@@ -52,20 +52,26 @@ def pytest_collection_modifyitems(config, items):
       item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}"))
 
 # --------------------------------------------------------------------------
-# @pytest.mark.tryfirst
-# def pytest_runtestloop(session):
-#   """
-#   """
-#   comm = MPI.COMM_WORLD
-#   # print("pytest_runtestloop", comm.rank)
+@pytest.mark.tryfirst
+def pytest_runtestloop(session):
+  """
+  """
+  comm = MPI.COMM_WORLD
+  # print("pytest_runtestloop", comm.rank)
 
-#   for i, item in enumerate(session.items):
-#       item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
-#       if session.shouldfail:
-#         raise session.Failed(session.shouldfail)
-#       if session.shouldstop:
-#         raise session.Interrupted(session.shouldstop)
-#   return True
+  for i, item in enumerate(session.items):
+      # print("*"*100)
+      # print(item.nodeid, dir(item._request._pyfuncitem))
+      # print(item.nodeid, " --> ")
+      # print(dir(item._sub_comm))
+      if(item._sub_comm != MPI.COMM_NULL):
+        item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
+      if session.shouldfail:
+        raise session.Failed(session.shouldfail)
+      if session.shouldstop:
+        raise session.Interrupted(session.shouldstop)
+      # print("*"*100)
+  return True
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
@@ -80,6 +86,7 @@ def pytest_configure(config):
   if comm.Get_rank() > 0:
     standard_reporter = config.pluginmanager.getplugin('terminalreporter')
     mpi_log = open(f"pytest_{comm.Get_rank()}.log", "w")
+    config._mpi_log = mpi_log
     instaprogress_reporter = TerminalReporter(config, file=mpi_log)
 
     config.pluginmanager.unregister(standard_reporter)
@@ -126,35 +133,36 @@ def pytest_configure(config):
 
   # --------------------------------------------------------------------------------
   # Prevent previous load of other pytest_html
-  xml = getattr(config, "_xml", None)
-  if xml:
-    del config._xml
-    config.pluginmanager.unregister(xml)
+  # xml = getattr(config, "_xml", None)
+  # if xml:
+  #   del config._xml
+  #   config.pluginmanager.unregister(xml)
 
-  xmlpath = config.option.xmlpath
-  # prevent opening xmllog on slave nodes (xdist)
-  if xmlpath and not hasattr(config, "slaveinput"):
-      junit_family = config.getini("junit_family")
-      junit_family = "xunit2"
-      if not junit_family:
-          _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
-      _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
-      config._xml = LogXMLMPI(
-          comm,
-          config._mpi_reporter,
-          xmlpath,
-          config.option.junitprefix,
-          config.getini("junit_suite_name"),
-          config.getini("junit_logging"),
-          config.getini("junit_duration_report"),
-          junit_family,
-          config.getini("junit_log_passing_tests"),
-      )
-      config.pluginmanager.register(config._xml)
+  # xmlpath = config.option.xmlpath
+  # # prevent opening xmllog on slave nodes (xdist)
+  # if xmlpath and not hasattr(config, "slaveinput"):
+  #     junit_family = config.getini("junit_family")
+  #     junit_family = "xunit2"
+  #     if not junit_family:
+  #         _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
+  #     _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
+  #     config._xml = LogXMLMPI(
+  #         comm,
+  #         config._mpi_reporter,
+  #         xmlpath,
+  #         config.option.junitprefix,
+  #         config.getini("junit_suite_name"),
+  #         config.getini("junit_logging"),
+  #         config.getini("junit_duration_report"),
+  #         junit_family,
+  #         config.getini("junit_log_passing_tests"),
+  #     )
+  #     config.pluginmanager.register(config._xml)
   # --------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-@pytest.mark.tryfirst
+# @pytest.mark.tryfirst
+@pytest.mark.trylast
 def pytest_unconfigure(config):
   html = getattr(config, "_html", None)
   if html:
@@ -165,3 +173,7 @@ def pytest_unconfigure(config):
   if xml:
     del config._xml
     config.pluginmanager.unregister(xml)
+
+  _mpi_log = getattr(config, "_mpi_log", None)
+  if _mpi_log:
+    _mpi_log.close()

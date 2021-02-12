@@ -40,11 +40,12 @@ def prepare_subcomm_for_tests(items):
   for i, item in enumerate(items):
     n_proc_test = get_n_proc_for_test(item)
 
-    # print("n_proc_test ::", n_proc_test)
+    # print(item.nodeid, "n_proc_test ::", n_proc_test)
     if(beg_next_rank + n_proc_test > n_rank):
       beg_next_rank = 0
 
     if(n_proc_test > n_rank):
+      item._sub_comm = MPI.COMM_NULL
       continue
 
     color = MPI.UNDEFINED
