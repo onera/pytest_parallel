@@ -30,7 +30,7 @@ class HTMLReportMPI(HTMLReport):
     """
     assert(self.mpi_reporter.post_done == True)
 
-    # print("pytest_sessionfinish:: ", len(self.mpi_reporter.mpi_reports.items()))
+    print("pytest_sessionfinish:: ", len(self.mpi_reporter.mpi_reports.items()))
     # -----------------------------------------------------------------
     for nodeid, report_list in self.mpi_reporter.mpi_reports.items():
       # print("nodeid::", nodeid)
@@ -68,7 +68,7 @@ class HTMLReportMPI(HTMLReport):
         # greport.longrepr = ExceptionChainRepr([(fake_trace_back_init, None, None)])
 
         collect_longrepr.append( (fake_trace_back_init, None, None) )
-        collect_longrepr.append( (report_init.longrepr, None, None))
+        # collect_longrepr.append( (report_init.longrepr, None, None))
 
         # tmp = report_init.longrepr.chain[0]
         # tmp[2] = "titit"
@@ -79,7 +79,7 @@ class HTMLReportMPI(HTMLReport):
 
       # > We need to rebuild a TestReport object, location can be false
       # > Report appears in rank increasing order
-      for i_rank_report, test_report  in report_list[1:]:
+      for i_rank_report, test_report  in report_list:
       # for i_rank_report, test_report  in report_list:
         # print("test_report::", i_rank_report, test_report)
 
@@ -108,8 +108,11 @@ class HTMLReportMPI(HTMLReport):
       if(len(collect_longrepr) > 0):
         greport.longrepr = ExceptionChainRepr(collect_longrepr)
         self.reports[nodeid] = [greport]
+      else:
+        self.reports[nodeid] = [greport]
     # -----------------------------------------------------------------
 
+    print("len(self.reports)::", len(self.reports))
     HTMLReport.pytest_sessionfinish(self, session)
 
 
