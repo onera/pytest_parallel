@@ -24,8 +24,8 @@ class HTMLReportMPI(HTMLReport):
     """
     Do not report cause you redo it after the gather
     """
-    pass
     # HTMLReport.pytest_runtest_logreport(self, report)
+    pass
 
   def pytest_sessionfinish(self, session):
     """
