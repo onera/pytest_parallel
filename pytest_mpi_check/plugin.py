@@ -133,31 +133,31 @@ def pytest_configure(config):
 
   # --------------------------------------------------------------------------------
   # Prevent previous load of other pytest_html
-  # xml = getattr(config, "_xml", None)
-  # if xml:
-  #   del config._xml
-  #   config.pluginmanager.unregister(xml)
+  xml = getattr(config, "_xml", None)
+  if xml:
+    del config._xml
+    config.pluginmanager.unregister(xml)
 
-  # xmlpath = config.option.xmlpath
-  # # prevent opening xmllog on slave nodes (xdist)
-  # if xmlpath and not hasattr(config, "slaveinput"):
-  #     junit_family = config.getini("junit_family")
-  #     junit_family = "xunit2"
-  #     if not junit_family:
-  #         _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
-  #     _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
-  #     config._xml = LogXMLMPI(
-  #         comm,
-  #         config._mpi_reporter,
-  #         xmlpath,
-  #         config.option.junitprefix,
-  #         config.getini("junit_suite_name"),
-  #         config.getini("junit_logging"),
-  #         config.getini("junit_duration_report"),
-  #         junit_family,
-  #         config.getini("junit_log_passing_tests"),
-  #     )
-  #     config.pluginmanager.register(config._xml)
+  xmlpath = config.option.xmlpath
+  # prevent opening xmllog on slave nodes (xdist)
+  if xmlpath and not hasattr(config, "slaveinput"):
+      junit_family = config.getini("junit_family")
+      junit_family = "xunit2"
+      if not junit_family:
+          _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
+      _issue_warning_captured(deprecated.JUNIT_XML_DEFAULT_FAMILY, config.hook, 2)
+      config._xml = LogXMLMPI(
+          comm,
+          config._mpi_reporter,
+          xmlpath,
+          config.option.junitprefix,
+          config.getini("junit_suite_name"),
+          config.getini("junit_logging"),
+          config.getini("junit_duration_report"),
+          junit_family,
+          config.getini("junit_log_passing_tests"),
+      )
+      config.pluginmanager.register(config._xml)
   # --------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------

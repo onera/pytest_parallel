@@ -31,6 +31,7 @@ class HTMLReportMPI(HTMLReport):
     assert(self.mpi_reporter.post_done == True)
 
     print("pytest_sessionfinish:: ", len(self.mpi_reporter.mpi_reports.items()))
+
     # -----------------------------------------------------------------
     for nodeid, report_list in self.mpi_reporter.mpi_reports.items():
       # print("nodeid::", nodeid)
@@ -52,30 +53,13 @@ class HTMLReportMPI(HTMLReport):
 
       collect_longrepr = []
       # i_rank_report_init
-      if(report_init.longrepr):
-        # print("report_init.longrepr.chain::", type(report_init.longrepr), report_init.longrepr.chain)
-        # print("*"*100)
-        # print("report_init.longrepr.chain[0][0]::", type(report_init.longrepr.chain[0][0]), report_init.longrepr.chain[0][0].reprentries)
-        # print("*"*100)
-        # print("*"*100)
-        # print("report_init.longrepr.chain[0][0]::", type(report_init.longrepr.chain[0][0]), report_init.longrepr.chain[0][0].extraline)
-        # print("*"*100)
-        # print("*"*100)
-        # print("report_init.longrepr.chain[0][0]::", type(report_init.longrepr.chain[0][0]), report_init.longrepr.chain[0][0].style)
-        # print("*"*100)
-        greport.longrepr = report_init.longrepr
-        fake_trace_back_init = ReprTraceback([ReprEntryNative(f"\n\n ----------------------- On rank {i_rank_report_init} ----------------------- \n\n")], None, None)
-        # greport.longrepr = ExceptionChainRepr([(fake_trace_back_init, None, None)])
+      # if(report_init.longrepr):
+      #   greport.longrepr = report_init.longrepr
+      #   fake_trace_back_init = ReprTraceback([ReprEntryNative(f"\n\n ----------------------- On rank {i_rank_report_init} ----------------------- \n\n")], None, None)
+      #   # greport.longrepr = ExceptionChainRepr([(fake_trace_back_init, None, None)])
 
-        collect_longrepr.append( (fake_trace_back_init, None, None) )
+      #   collect_longrepr.append( (fake_trace_back_init, None, None) )
         # collect_longrepr.append( (report_init.longrepr, None, None))
-
-        # tmp = report_init.longrepr.chain[0]
-        # tmp[2] = "titit"
-        # report_init.longrepr.chain.append( report_init.longrepr.chain[0])
-        # report_init.longrepr.chain.append( (tmp[0], tmp[1], "-"*100))
-        # greport.longrepr.addsection(f" rank {i_rank_report_init}", str(report_init.longrepr))
-        # greport.longrepr.addsection(f" rank {i_rank_report_init}", str(report_init.longrepr))
 
       # > We need to rebuild a TestReport object, location can be false
       # > Report appears in rank increasing order
@@ -98,18 +82,10 @@ class HTMLReportMPI(HTMLReport):
       #   print(" -----> ", type(i_collect), i_collect)
       # print("******")
 
-
-      # self.reports[nodeid] = [greport, greport, greport]
-      # self.reports[nodeid] = [greport]
-      # print("len(collect_longrepr)::", len(collect_longrepr))
-      # reprtraceback = collect_longrepr[-1]
-      # reprcrash     = collect_longrepr[-1][1]
-
       if(len(collect_longrepr) > 0):
         greport.longrepr = ExceptionChainRepr(collect_longrepr)
-        self.reports[nodeid] = [greport]
-      else:
-        self.reports[nodeid] = [greport]
+
+      self.reports[nodeid] = [greport]
     # -----------------------------------------------------------------
 
     print("len(self.reports)::", len(self.reports))
@@ -168,3 +144,21 @@ class HTMLReportMPI(HTMLReport):
 
     HTMLReport.pytest_sessionfinish(self, session)
 
+
+        # tmp = report_init.longrepr.chain[0]
+        # tmp[2] = "titit"
+        # report_init.longrepr.chain.append( report_init.longrepr.chain[0])
+        # report_init.longrepr.chain.append( (tmp[0], tmp[1], "-"*100))
+        # greport.longrepr.addsection(f" rank {i_rank_report_init}", str(report_init.longrepr))
+        # greport.longrepr.addsection(f" rank {i_rank_report_init}", str(report_init.longrepr))
+
+        # print("report_init.longrepr.chain::", type(report_init.longrepr), report_init.longrepr.chain)
+        # print("*"*100)
+        # print("report_init.longrepr.chain[0][0]::", type(report_init.longrepr.chain[0][0]), report_init.longrepr.chain[0][0].reprentries)
+        # print("*"*100)
+        # print("*"*100)
+        # print("report_init.longrepr.chain[0][0]::", type(report_init.longrepr.chain[0][0]), report_init.longrepr.chain[0][0].extraline)
+        # print("*"*100)
+        # print("*"*100)
+        # print("report_init.longrepr.chain[0][0]::", type(report_init.longrepr.chain[0][0]), report_init.longrepr.chain[0][0].style)
+        # print("*"*100)
