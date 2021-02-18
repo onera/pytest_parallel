@@ -13,6 +13,7 @@ from .mpi_reporter import MPIReporter
 from .utils import get_n_proc_for_test, prepare_subcomm_for_tests
 
 from _pytest          import deprecated
+from _pytest          import runner
 from _pytest.warnings import _issue_warning_captured
 
 from _pytest._code.code import ExceptionChainRepr
@@ -54,6 +55,12 @@ def pytest_collection_modifyitems(config, items):
       item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}"))
 
 # --------------------------------------------------------------------------
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+  if item._sub_comm != MPI.COMM_NULL:
+    runner.pytest_runtest_call(item)
+  yield
+# --------------------------------------------------------------------------
 @pytest.mark.tryfirst
 def pytest_runtestloop(session):
   """
@@ -66,8 +73,8 @@ def pytest_runtestloop(session):
       # print(item.nodeid, dir(item._request._pyfuncitem))
       # print(item.nodeid, " --> ")
       # print(dir(item._sub_comm))
-      if(item._sub_comm != MPI.COMM_NULL):
-        item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
+      # Exclusion of comm_null will be performed in pytest_runtest_call
+      item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
       if session.shouldfail:
         raise session.Failed(session.shouldfail)
       if session.shouldstop:

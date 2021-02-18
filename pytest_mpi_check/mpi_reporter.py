@@ -38,7 +38,10 @@ class MPIReporter(object):
     # if(self.comm.Get_rank() != 0):
     # Egalemnt possible d'envoyer que si il est execute (donc MPI_COMM != NULL )
     # Si skip uniquement le rang 0 le fait
-    if(self.comm.Get_rank() >= 0 and (report.skipped == False) and (report.when == "call")):
+
+    has_runned  = not report.skipped and report.when == "call"
+    mpi_skipped = report.skipped and self.comm.Get_rank() == 0 and report.when == 'setup'
+    if(has_runned or mpi_skipped):
       # > Attention report peut être gros (stdout dedans etc ...)
       self.comm.send(report, dest=0, tag=self.n_send)
       self.n_send += 1
@@ -71,18 +74,20 @@ class MPIReporter(object):
       collect_longrepr = []
       # > We need to rebuild a TestReport object, location can be false
       # > Report appears in rank increasing order
-      for i_rank_report, test_report in report_list:
+      if greport.outcome != 'skipped':
+        # Skipped test are only know by proc 0 -> no merge required
+        for i_rank_report, test_report in report_list:
 
-        if(test_report.outcome == 'failed'):
-          greport.outcome = test_report.outcome
+          if(test_report.outcome == 'failed'):
+            greport.outcome = test_report.outcome
 
-        if(test_report.longrepr):
-          fake_trace_back = ReprTraceback([ReprEntryNative(f"\n\n----------------------- On rank [{test_report._i_rank}/{test_report._n_rank}] / Global [{i_rank_report}/{self.comm.Get_size()}] ----------------------- \n\n")], None, None)
-          collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
-          collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
+          if(test_report.longrepr):
+            fake_trace_back = ReprTraceback([ReprEntryNative(f"\n\n----------------------- On rank [{test_report._i_rank}/{test_report._n_rank}] / Global [{i_rank_report}/{self.comm.Get_size()}] ----------------------- \n\n")], None, None)
+            collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
+            collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
 
-      if(len(collect_longrepr) > 0):
-        greport.longrepr = ExceptionChainRepr(collect_longrepr)
+        if(len(collect_longrepr) > 0):
+          greport.longrepr = ExceptionChainRepr(collect_longrepr)
 
       self.reports_gather[nodeid] = [greport]
     # -----------------------------------------------------------------

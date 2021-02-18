@@ -6,6 +6,7 @@ from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, Rep
 
 from mpi4py import MPI
 from collections import defaultdict
+from copy import copy
 
 from pytest_html.plugin import HTMLReport
 
@@ -33,12 +34,13 @@ class HTMLReportMPI(HTMLReport):
     # print("pytest_sessionfinish:: ", len(self.mpi_reporter.mpi_reports.items()))
 
     assert(self.mpi_reporter.post_done == True)
-
     # print("\n", self.comm.Get_rank(), "HTMLReportMPI::pytest_sessionfinish flag 4")
 
     for i_report, report in self.mpi_reporter.reports_gather.items():
       # print(i_report, " ---> ", report)
-      HTMLReport.pytest_runtest_logreport(self, report[0])
+      #Copy is mandatory because pytest-html v3.1.1 refill test_report.longrepr with a string instead
+      #of tuple (see pytest_html/plugin.py, l730)
+      HTMLReport.pytest_runtest_logreport(self, copy(report[0]))
     HTMLReport.pytest_sessionfinish(self, session)
 
 
