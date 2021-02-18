@@ -15,6 +15,20 @@ class MPIReporter(object):
     self.post_done      = False
     self.reports_gather = defaultdict(list)
 
+
+  @pytest.hookimpl(tryfirst=True, hookwrapper=True)
+  def pytest_runtest_makereport(self, item):
+    # print("pytest_runtest_makereport", item._sub_comm)
+    outcome = yield
+    report = outcome.get_result()
+    if(item._sub_comm != MPI.COMM_NULL):
+      report._i_rank = item._sub_comm.Get_rank()
+      report._n_rank = item._sub_comm.Get_size()
+    else:
+      report._i_rank = 0
+      report._n_rank = 1
+
+
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     """
@@ -34,7 +48,6 @@ class MPIReporter(object):
     """
     assert(self.post_done == True)
 
-    print("pytest_sessionfinish:: ", len(self.mpi_reports.items()))
 
     # -----------------------------------------------------------------
     for nodeid, report_list in self.mpi_reports.items():
@@ -49,7 +62,7 @@ class MPIReporter(object):
                            report_init.location,
                            report_init.keywords,
                            report_init.outcome,
-                           None, # longrepr
+                           report_init.longrepr, # longrepr
                            report_init.when)
 
       # print("report_init.location::", report_init.location)
@@ -64,7 +77,7 @@ class MPIReporter(object):
           greport.outcome = test_report.outcome
 
         if(test_report.longrepr):
-          fake_trace_back = ReprTraceback([ReprEntryNative(f"\n\n----------------------- On rank {i_rank_report} ----------------------- \n\n")], None, None)
+          fake_trace_back = ReprTraceback([ReprEntryNative(f"\n\n----------------------- On rank [{test_report._i_rank}/{test_report._n_rank}] / Global [{i_rank_report}/{self.comm.Get_size()}] ----------------------- \n\n")], None, None)
           collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
           collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
 
@@ -80,6 +93,7 @@ class MPIReporter(object):
     """
     nb_recv_tot = self.comm.reduce(self.n_send, root=0)
     # print("nb_recv_tot::", nb_recv_tot)
+    # print("\n MPIReporter::pytest_sessionfinish:: ", len(self.mpi_reports.items()))
 
     self.comm.Barrier()
 
