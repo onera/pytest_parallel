@@ -1,4 +1,5 @@
 import pytest
+import sys
 
 from ._decorator import sub_comm
 
@@ -6,6 +7,7 @@ from mpi4py import MPI
 
 from .html_mpi     import HTMLReportMPI
 from .junit_mpi    import LogXMLMPI
+from .terminal_mpi import TerminalReporterMPI
 from .mpi_reporter import MPIReporter
 
 from .utils import get_n_proc_for_test, prepare_subcomm_for_tests
@@ -77,21 +79,7 @@ def pytest_runtestloop(session):
 @pytest.mark.trylast
 def pytest_configure(config):
 
-  print("pytest_configure::pytest_mpi_check")
-
   comm = MPI.COMM_WORLD
-
-  # --------------------------------------------------------------------------------
-  # Reconfiguration des logs
-  if comm.Get_rank() > 0:
-    standard_reporter = config.pluginmanager.getplugin('terminalreporter')
-    mpi_log = open(f"pytest_{comm.Get_rank()}.log", "w")
-    config._mpi_log = mpi_log
-    instaprogress_reporter = TerminalReporter(config, file=mpi_log)
-
-    config.pluginmanager.unregister(standard_reporter)
-    config.pluginmanager.register(instaprogress_reporter, 'terminalreporter')
-  # --------------------------------------------------------------------------------
 
   # --------------------------------------------------------------------------------
   mpi_reporter = getattr(config, "_mpi_reporter", None)
@@ -103,6 +91,20 @@ def pytest_configure(config):
   config._mpi_reporter = MPIReporter(comm)
   config.pluginmanager.register(config._mpi_reporter)
   # --------------------------------------------------------------------------------
+
+  # --------------------------------------------------------------------------------
+  # Reconfiguration des logs
+  standard_reporter = config.pluginmanager.getplugin('terminalreporter')
+  if comm.Get_rank() == 0:
+    mpi_log = sys.stdout
+  else:
+    mpi_log = open(f"pytest_{comm.Get_rank()}.log", "w")
+  config._mpi_log = mpi_log
+  instaprogress_reporter = TerminalReporterMPI(comm, config, mpi_log, config._mpi_reporter)
+
+  config.pluginmanager.unregister(standard_reporter)
+  config.pluginmanager.register(instaprogress_reporter, 'terminalreporter')
+  # -------------
 
   # --------------------------------------------------------------------------------
   # Prevent previous load of other pytest_html
@@ -177,3 +179,18 @@ def pytest_unconfigure(config):
   _mpi_log = getattr(config, "_mpi_log", None)
   if _mpi_log:
     _mpi_log.close()
+
+@pytest.mark.tryfirst
+def pytest_sessionfinish(session, exitstatus):
+  # print("\n CONFTEST::pytest_sessionfinish oooo:: ", exitstatus)
+  standard_reporter = session.config.pluginmanager.getplugin('terminalreporter')
+  # print(type(standard_reporter))
+  assert(isinstance(standard_reporter, TerminalReporterMPI))
+
+  # if(not standard_reporter.mpi_reporter.post_done):
+  #   standard_reporter.mpi_reporter.pytest_sessionfinish(session)
+  assert(standard_reporter.mpi_reporter.post_done == True)
+
+  for i_report, report in standard_reporter.mpi_reporter.reports_gather.items():
+    # print(" \n ", i_report, " 2/ ---> ", report, "\n")
+    TerminalReporter.pytest_runtest_logreport(standard_reporter, report[0])

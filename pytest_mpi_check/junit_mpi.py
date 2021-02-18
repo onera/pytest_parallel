@@ -53,7 +53,7 @@ class LogXMLMPI(LogXML):
     """
     assert(self.mpi_reporter.post_done == True)
 
-    print(self.comm.Get_rank(), " pytest_sessionfinish flag 4")
+    # print("\n", self.comm.Get_rank(), "LogXMLMPI::pytest_sessionfinish flag 4")
 
     for i_report, report in self.mpi_reporter.reports_gather.items():
       # print(i_report, " ---> ", report)
