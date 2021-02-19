@@ -46,6 +46,7 @@ def prepare_subcomm_for_tests(items):
 
     if(n_proc_test > n_rank):
       item._sub_comm = MPI.COMM_NULL
+      # item._sub_comm = -1 # None
       continue
 
     color = MPI.UNDEFINED
@@ -56,6 +57,8 @@ def prepare_subcomm_for_tests(items):
     if(comm_split != MPI.COMM_NULL):
       assert comm_split.size == n_proc_test
       # print(f"[{i_rank}] Create group with size : {comm_split.size} for test : {item.nodeid}" )
+    else:
+      assert(comm_split == MPI.COMM_NULL)
 
     item._sub_comm = comm_split
     beg_next_rank += n_proc_test

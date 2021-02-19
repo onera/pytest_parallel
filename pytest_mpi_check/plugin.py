@@ -32,7 +32,7 @@ from _pytest.terminal   import TerminalReporter
 #   parser.addini('HELLO', 'Dummy pytest.ini setting')
 
 # --------------------------------------------------------------------------
-@pytest.mark.tryfirst
+@pytest.mark.trylast
 def pytest_collection_modifyitems(config, items):
   """
   Skip tests depending on what options are chosen
@@ -45,40 +45,19 @@ def pytest_collection_modifyitems(config, items):
   prepare_subcomm_for_tests(items)
 
   # Rajouter nombre proc max dans les infos
+  filtered_list = []
   for item in items:
 
     n_proc_test = get_n_proc_for_test(item)
-    # print("+++++", n_proc_test, item.nodeid)
+
     if(n_proc_test > n_rank):
+      # assert False, item.nodeid
       item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}"))
 
-# --------------------------------------------------------------------------
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_call(item):
-  if item._sub_comm != MPI.COMM_NULL:
-    runner.pytest_runtest_call(item)
-  yield
-# --------------------------------------------------------------------------
-@pytest.mark.tryfirst
-def pytest_runtestloop(session):
-  """
-  """
-  comm = MPI.COMM_WORLD
-  # print("pytest_runtestloop", comm.rank)
+    if(item._sub_comm != MPI.COMM_NULL):
+      filtered_list.append(item)
 
-  for i, item in enumerate(session.items):
-      # print("*"*100)
-      # print(item.nodeid, dir(item._request._pyfuncitem))
-      # print(item.nodeid, " --> ")
-      # print(dir(item._sub_comm))
-      # Exclusion of comm_null will be performed in pytest_runtest_call
-      item.config.hook.pytest_runtest_protocol(item=item, nextitem=None)
-      if session.shouldfail:
-        raise session.Failed(session.shouldfail)
-      if session.shouldstop:
-        raise session.Interrupted(session.shouldstop)
-      # print("*"*100)
-  return True
+  items[:] = filtered_list # [:] is mandatory because many reference inside pytest
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
@@ -109,7 +88,7 @@ def pytest_configure(config):
 
   config.pluginmanager.unregister(standard_reporter)
   config.pluginmanager.register(instaprogress_reporter, 'terminalreporter')
-  # -------------
+  # --------------------------------------------------------------------------------
 
   # --------------------------------------------------------------------------------
   # Prevent previous load of other pytest_html
@@ -164,7 +143,6 @@ def pytest_configure(config):
   # --------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-# @pytest.mark.tryfirst
 @pytest.mark.trylast
 def pytest_unconfigure(config):
   html = getattr(config, "_html", None)
@@ -183,9 +161,7 @@ def pytest_unconfigure(config):
 
 @pytest.mark.tryfirst
 def pytest_sessionfinish(session, exitstatus):
-  # print("\n CONFTEST::pytest_sessionfinish oooo:: ", exitstatus)
   standard_reporter = session.config.pluginmanager.getplugin('terminalreporter')
-  # print(type(standard_reporter))
   assert(isinstance(standard_reporter, TerminalReporterMPI))
 
   # if(not standard_reporter.mpi_reporter.post_done):
@@ -195,3 +171,5 @@ def pytest_sessionfinish(session, exitstatus):
   for i_report, report in standard_reporter.mpi_reporter.reports_gather.items():
     # print(" \n ", i_report, " 2/ ---> ", report, "\n")
     TerminalReporter.pytest_runtest_logreport(standard_reporter, report[0])
+
+

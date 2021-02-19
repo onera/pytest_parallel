@@ -28,6 +28,8 @@ class MPIReporter(object):
       report._i_rank = 0
       report._n_rank = 1
 
+    # report._i_rank = MPI.COMM_WORLD.Get_rank()
+    # report._n_rank = MPI.COMM_WORLD.Get_size()
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
