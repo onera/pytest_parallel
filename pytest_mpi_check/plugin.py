@@ -46,18 +46,23 @@ def pytest_collection_modifyitems(config, items):
 
   # Rajouter nombre proc max dans les infos
   filtered_list = []
+  # deselected = []
   for item in items:
 
     n_proc_test = get_n_proc_for_test(item)
 
     if(n_proc_test > n_rank):
       # assert False, item.nodeid
-      item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}"))
+      item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}", append=False))
+      filtered_list.append(item)
 
     if(item._sub_comm != MPI.COMM_NULL):
       filtered_list.append(item)
 
-  items[:] = filtered_list # [:] is mandatory because many reference inside pytest
+  # config.hook.pytest_deselected(items=deselected)
+  items[:] = filtered_list
+
+  # items[:] = filtered_list # [:] is mandatory because many reference inside pytest
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
