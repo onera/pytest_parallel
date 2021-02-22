@@ -161,7 +161,8 @@ def pytest_unconfigure(config):
       config.pluginmanager.unregister(xml)
 
   _mpi_log = getattr(config, "_mpi_log", None)
-  if _mpi_log:
+  comm = MPI.COMM_WORLD
+  if _mpi_log and comm.Get_rank() > 0:
     _mpi_log.close()
 
 @pytest.mark.tryfirst
