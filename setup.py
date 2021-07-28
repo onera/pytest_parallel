@@ -3,7 +3,7 @@
 
 import os
 import codecs
-from setuptools import setup
+import setuptools
 
 
 def read(fname):
@@ -11,7 +11,7 @@ def read(fname):
     return codecs.open(file_path, encoding='utf-8').read()
 
 
-setup(
+setuptools.setup(
     name='pytest-mpi-check',
     version='0.1.0',
     author='Bruno Maugars',
@@ -22,7 +22,7 @@ setup(
     url='https://github.com/maugarsb/pytest-mpi-check',
     description='Plugin to manage test in distributed way with MPI Standard',
     long_description=read('README.rst'),
-    py_modules=['pytest_mpi_check'],
+    packages=setuptools.find_packages(),
     python_requires='>=3.5',
     install_requires=['pytest>=3.5.0'],
     classifiers=[
@@ -38,7 +38,6 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3 :: Only',
         'Programming Language :: Python :: Implementation :: CPython',
-        'Programming Language :: Python :: Implementation :: PyPy',
         'Operating System :: OS Independent',
         'License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)',
     ],
