@@ -1,7 +1,8 @@
 import pytest
 import sys
 
-from ._decorator import sub_comm
+from ._decorator import sub_comm # seems unused, but used by pytest
+from .mark import comm # seems unused, but used by pytest
 
 from mpi4py import MPI
 
