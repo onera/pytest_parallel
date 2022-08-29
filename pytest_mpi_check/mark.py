@@ -1,6 +1,4 @@
 import pytest
-from decorator import decorate
-from mpi4py import MPI
 
 @pytest.fixture
 def comm(request):
@@ -9,7 +7,7 @@ def comm(request):
   """
   return request._pyfuncitem._sub_comm
 
-def parallel(n_proc_list = MPI.COMM_WORLD.Get_size()):
+def parallel(n_proc_list):
   if isinstance(n_proc_list,int):
     n_proc_list = [n_proc_list]
   def mark_mpi_test_impl(tested_fun):

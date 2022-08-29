@@ -5,7 +5,7 @@ from _pytest.nodes import Item
 from mpi4py import MPI
 
 # --------------------------------------------------------------------------
-def get_n_proc_for_test(item: Item) -> int :
+def get_n_proc_for_test_impl(item: Item, fixture_name) -> int :
   """
   """
   n_proc_test = 1
@@ -18,7 +18,7 @@ def get_n_proc_for_test(item: Item) -> int :
     # print("parametrize value to use ::", item.callspec.getparam('make_sub_comm'))
     # print("parametrize value to use ::", item.callspec.getparam('sub_comm'))
     # > On pourrai egalement essayer de hooks le vrai communicateur : ici sub_comm == Nombre de rang pour faire le test
-    n_proc_test = item.callspec.getparam('sub_comm')
+    n_proc_test = item.callspec.getparam(fixture_name)
     # print(" ooooo ", item.nodeid, " ---> ", n_proc_test)
   except AttributeError: # No decorator = sequentiel
     pass
@@ -27,6 +27,10 @@ def get_n_proc_for_test(item: Item) -> int :
 
   return n_proc_test
 
+def get_n_proc_for_test(item: Item) -> int :
+  n_from_sub_comm_fixture = get_n_proc_for_test_impl(item,'sub_comm')
+  n_from_comm_fixture     = get_n_proc_for_test_impl(item,'comm')
+  return max(n_from_sub_comm_fixture,n_from_comm_fixture)
 
 # --------------------------------------------------------------------------
 def prepare_subcomm_for_tests(items):
