@@ -1,23 +1,18 @@
 import pytest
 import sys
 
-from ._decorator import sub_comm # seems unused, but used by pytest
 from .mark import comm # seems unused, but used by pytest
 
 from mpi4py import MPI
 
-from .html_mpi     import HTMLReportMPI
-from .junit_mpi    import LogXMLMPI
+#from .html_mpi     import HTMLReportMPI
+#from .junit_mpi    import LogXMLMPI
 from .terminal_mpi import TerminalReporterMPI
 from .mpi_reporter import MPIReporter
-from _pytest.junitxml import xml_key
+#from _pytest.junitxml import xml_key
 
 from .utils import get_n_proc_for_test, prepare_subcomm_for_tests
 
-from _pytest          import deprecated
-from _pytest          import runner
-
-from _pytest._code.code import ExceptionChainRepr
 from _pytest.terminal   import TerminalReporter
 
 # --------------------------------------------------------------------------
@@ -96,70 +91,70 @@ def pytest_configure(config):
   config.pluginmanager.register(instaprogress_reporter, 'terminalreporter')
   # --------------------------------------------------------------------------------
 
-  # --------------------------------------------------------------------------------
-  # Prevent previous load of other pytest_html
-  html = getattr(config, "_html", None)
-  if html:
-    del config._html
-    config.pluginmanager.unregister(html)
+  ## --------------------------------------------------------------------------------
+  ## Prevent previous load of other pytest_html
+  #html = getattr(config, "_html", None)
+  #if html:
+  #  del config._html
+  #  config.pluginmanager.unregister(html)
 
-  htmlpath = config.getoption("htmlpath")
-  if htmlpath:
-    missing_css_files = []
-    for csspath in config.getoption("css"):
-      if not os.path.exists(csspath):
-        missing_css_files.append(csspath)
+  #htmlpath = config.getoption("htmlpath")
+  #if htmlpath:
+  #  missing_css_files = []
+  #  for csspath in config.getoption("css"):
+  #    if not os.path.exists(csspath):
+  #      missing_css_files.append(csspath)
 
-    if missing_css_files:
-      oserror = (
-                 f"Missing CSS file{'s' if len(missing_css_files) > 1 else ''}:"
-                 f" {', '.join(missing_css_files)}"
-                 )
-      raise OSError(oserror)
+  #  if missing_css_files:
+  #    oserror = (
+  #               f"Missing CSS file{'s' if len(missing_css_files) > 1 else ''}:"
+  #               f" {', '.join(missing_css_files)}"
+  #               )
+  #    raise OSError(oserror)
 
-    if not hasattr(config, "workerinput"):
-      # prevent opening htmlpath on worker nodes (xdist)
-      config._html = HTMLReportMPI(comm, htmlpath, config, config._mpi_reporter)
-      config.pluginmanager.register(config._html)
-  # --------------------------------------------------------------------------------
+  #  if not hasattr(config, "workerinput"):
+  #    # prevent opening htmlpath on worker nodes (xdist)
+  #    config._html = HTMLReportMPI(comm, htmlpath, config, config._mpi_reporter)
+  #    config.pluginmanager.register(config._html)
+  ## --------------------------------------------------------------------------------
 
-  # --------------------------------------------------------------------------------
-  # Prevent previous load of other pytest_html
-  xml = config._store.get(xml_key, None)
-  if xml:
-      del config._store[xml_key]
-      config.pluginmanager.unregister(xml)
+  ## --------------------------------------------------------------------------------
+  ## Prevent previous load of other pytest_html
+  #xml = config._store.get(xml_key, None)
+  #if xml:
+  #    del config._store[xml_key]
+  #    config.pluginmanager.unregister(xml)
 
-  xmlpath = config.option.xmlpath
-  # Prevent opening xmllog on worker nodes (xdist).
-  if xmlpath and not hasattr(config, "workerinput"):
-      junit_family = config.getini("junit_family")
-      config._store[xml_key] = LogXMLMPI(
-          comm,
-          config._mpi_reporter,
-          xmlpath,
-          config.option.junitprefix,
-          config.getini("junit_suite_name"),
-          config.getini("junit_logging"),
-          config.getini("junit_duration_report"),
-          junit_family,
-          config.getini("junit_log_passing_tests"),
-      )
-      config.pluginmanager.register(config._store[xml_key])
-  # --------------------------------------------------------------------------------
+  #xmlpath = config.option.xmlpath
+  ## Prevent opening xmllog on worker nodes (xdist).
+  #if xmlpath and not hasattr(config, "workerinput"):
+  #    junit_family = config.getini("junit_family")
+  #    config._store[xml_key] = LogXMLMPI(
+  #        comm,
+  #        config._mpi_reporter,
+  #        xmlpath,
+  #        config.option.junitprefix,
+  #        config.getini("junit_suite_name"),
+  #        config.getini("junit_logging"),
+  #        config.getini("junit_duration_report"),
+  #        junit_family,
+  #        config.getini("junit_log_passing_tests"),
+  #    )
+  #    config.pluginmanager.register(config._store[xml_key])
+  ## --------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_unconfigure(config):
-  html = getattr(config, "_html", None)
-  if html:
-    del config._html
-    config.pluginmanager.unregister(html)
+  #html = getattr(config, "_html", None)
+  #if html:
+  #  del config._html
+  #  config.pluginmanager.unregister(html)
 
-  xml = config._store.get(xml_key, None)
-  if xml:
-      del config._store[xml_key]
-      config.pluginmanager.unregister(xml)
+  #xml = config._store.get(xml_key, None)
+  #if xml:
+  #    del config._store[xml_key]
+  #    config.pluginmanager.unregister(xml)
 
   _mpi_log = getattr(config, "_mpi_log", None)
   comm = MPI.COMM_WORLD

@@ -5,7 +5,7 @@ def comm(request):
   """
   Only return a previous MPI Communicator (build at prepare step )
   """
-  return request._pyfuncitem._sub_comm
+  return request._pyfuncitem._sub_comm # TODO clean
 
 def parallel(n_proc_list):
   if isinstance(n_proc_list,int):
