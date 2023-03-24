@@ -18,18 +18,14 @@ class MPIReporter(object):
 
   @pytest.hookimpl(tryfirst=True, hookwrapper=True)
   def pytest_runtest_makereport(self, item):
-    # print("pytest_runtest_makereport", item._sub_comm)
     outcome = yield
     report = outcome.get_result()
-    if(item._sub_comm != MPI.COMM_NULL):
+    if item._sub_comm != MPI.COMM_NULL:
       report._i_rank = item._sub_comm.Get_rank()
       report._n_rank = item._sub_comm.Get_size()
     else:
       report._i_rank = 0
       report._n_rank = 1
-
-    # report._i_rank = MPI.COMM_WORLD.Get_rank()
-    # report._n_rank = MPI.COMM_WORLD.Get_size()
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
@@ -43,7 +39,7 @@ class MPIReporter(object):
 
     has_runned  = not report.skipped and report.when == "call"
     mpi_skipped = report.skipped and self.comm.Get_rank() == 0 and report.when == 'setup'
-    if(has_runned or mpi_skipped):
+    if has_runned or mpi_skipped:
       # > Attention report peut être gros (stdout dedans etc ...)
       self.comm.send(report, dest=0, tag=self.n_send)
       self.n_send += 1
@@ -51,14 +47,14 @@ class MPIReporter(object):
   def gather_report(self):
     """
     """
-    assert(self.post_done == True)
+    assert self.post_done
 
 
     # -----------------------------------------------------------------
     for nodeid, report_list in self.mpi_reports.items():
       # print("nodeid::", nodeid)
 
-      assert(len(report_list) > 0)
+      assert len(report_list) > 0
 
       # > Initialize with the first reporter
       i_rank_report_init, report_init = report_list[0]
@@ -99,8 +95,6 @@ class MPIReporter(object):
     """
     """
     nb_recv_tot = self.comm.reduce(self.n_send, root=0)
-    # print("nb_recv_tot::", nb_recv_tot)
-    # print("\n MPIReporter::pytest_sessionfinish:: ", len(self.mpi_reports.items()))
 
     self.comm.Barrier()
 
@@ -116,7 +110,7 @@ class MPIReporter(object):
             # self.mpi_reports[(status.Get_source(),report.nodeid)].append(report)
             self.mpi_reports[report.nodeid].append((status.Get_source(), report))
 
-      # > Sort by incrizing rank number
+      # > Sort by increasing rank number
       for node_id, report_list in self.mpi_reports.items():
         report_list.sort(key = lambda tup: tup[0])
 

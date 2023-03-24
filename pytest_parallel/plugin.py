@@ -1,7 +1,7 @@
 import pytest
 import sys
 
-from .mark import comm # seems unused, but used by pytest
+from .mark import comm # seems unused, but used by pytest # TODO check
 
 from mpi4py import MPI
 
@@ -11,9 +11,9 @@ from .terminal_reporter_mpi import TerminalReporterMPI
 from .mpi_reporter import MPIReporter
 #from _pytest.junitxml import xml_key
 
-from .utils import get_n_proc_for_test, prepare_subcomm_for_tests, terminate_with_no_exception
+from .utils import prepare_subcomm_for_tests, filter_items, terminate_with_no_exception
 
-from _pytest.terminal   import TerminalReporter
+from _pytest.terminal import TerminalReporter
 
 def pytest_addoption(parser):
   parser.addoption('--report-file', dest='report_file', default=None)
@@ -21,55 +21,39 @@ def pytest_addoption(parser):
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_collection_modifyitems(config, items):
-  """
-  Skip tests depending on what options are chosen
-  """
-  comm   = MPI.COMM_WORLD
-  n_rank = comm.size
-  i_rank = comm.rank
-
-  # > This fonction do a kind of sheduling because if comm is null the test is not executed
   prepare_subcomm_for_tests(items)
-
-  filtered_list = []
-  for item in items:
-    n_proc_test = get_n_proc_for_test(item)
-
-    if n_proc_test > n_rank:
-      skip_msg = f'Not enought rank to execute test: {n_proc_test} procs required but only {n_rank} available'
-      item.add_marker(pytest.mark.skip(reason=skip_msg, append=False))
-      filtered_list.append(item)
-
-    if(item._sub_comm != MPI.COMM_NULL):
-      filtered_list.append(item)
-
-  # config.hook.pytest_deselected(items=deselected)
-  items[:] = filtered_list
-
-  # items[:] = filtered_list # [:] is mandatory because many reference inside pytest
+  items[:] = filter_items(items)
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_configure(config):
-
   comm = MPI.COMM_WORLD
 
-  config._mpi_reporter = MPIReporter(MPI.COMM_WORLD)
+  config._mpi_reporter = MPIReporter(comm)
   config.pluginmanager.register(config._mpi_reporter)
-  
-  # Change terminalreporter so it uses TerminalReporterMPI
-  standard_terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
-  config.pluginmanager.unregister(standard_terminal_reporter)
 
+  # 0. Open `report_file` if necessary
   report_file = config.getoption("report_file")
+
+  # TODO change TerminalReporterMPI to not need to do that
+  if comm.Get_rank() != 0:
+    report_file = f'pytest.{comm.Get_rank()}.log'
+
   if isinstance(report_file, str):
     try:
-      config._report_file = open(report_file,'w')
+      report_file = open(report_file,'w')
     except Exception as e:
       terminate_with_no_exception(str(e))
 
+  config._report_file = report_file # keep a link here so we can close the file in `pytest_unconfigure`
+
+  # 1. Change terminalreporter so it uses TerminalReporterMPI
+  standard_terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
+  config.pluginmanager.unregister(standard_terminal_reporter)
+
   mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, config._mpi_reporter)
   config.pluginmanager.register(mpi_terminal_reporter, 'terminalreporter')
+
 
   ## --------------------------------------------------------------------------------
   ## Prevent previous load of other pytest_html
@@ -126,7 +110,8 @@ def pytest_configure(config):
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_unconfigure(config):
-  pass
+  if config._report_file is not None:
+    config._report_file.close()
   #html = getattr(config, "_html", None)
   #if html:
   #  del config._html
@@ -137,6 +122,7 @@ def pytest_unconfigure(config):
   #    del config._store[xml_key]
   #    config.pluginmanager.unregister(xml)
 
+# --------------------------------------------------------------------------
 @pytest.mark.tryfirst
 def pytest_sessionfinish(session, exitstatus):
   mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
