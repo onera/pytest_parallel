@@ -7,25 +7,16 @@ from mpi4py import MPI
 
 #from .html_mpi     import HTMLReportMPI
 #from .junit_mpi    import LogXMLMPI
-from .terminal_mpi import TerminalReporterMPI
+from .terminal_reporter_mpi import TerminalReporterMPI
 from .mpi_reporter import MPIReporter
 #from _pytest.junitxml import xml_key
 
-from .utils import get_n_proc_for_test, prepare_subcomm_for_tests
+from .utils import get_n_proc_for_test, prepare_subcomm_for_tests, terminate_with_no_exception
 
 from _pytest.terminal   import TerminalReporter
 
-# --------------------------------------------------------------------------
-# def pytest_addoption(parser):
-#   group = parser.getgroup('mpi-check')
-#   group.addoption(
-#                   '--foo',
-#                   action='store',
-#                   dest='dest_foo',
-#                   default='2020',
-#                   help='Set the value for the fixture "bar".'
-#                   )
-#   parser.addini('HELLO', 'Dummy pytest.ini setting')
+def pytest_addoption(parser):
+  parser.addoption('--report-file', dest='report_file', default=None)
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
@@ -40,16 +31,13 @@ def pytest_collection_modifyitems(config, items):
   # > This fonction do a kind of sheduling because if comm is null the test is not executed
   prepare_subcomm_for_tests(items)
 
-  # Rajouter nombre proc max dans les infos
   filtered_list = []
-  # deselected = []
   for item in items:
-
     n_proc_test = get_n_proc_for_test(item)
 
-    if(n_proc_test > n_rank):
-      # assert False, item.nodeid
-      item.add_marker(pytest.mark.skip(reason=f" Not enought rank to execute test [required/available] : {n_proc_test}/{n_rank}", append=False))
+    if n_proc_test > n_rank:
+      skip_msg = f'Not enought rank to execute test: {n_proc_test} procs required but only {n_rank} available'
+      item.add_marker(pytest.mark.skip(reason=skip_msg, append=False))
       filtered_list.append(item)
 
     if(item._sub_comm != MPI.COMM_NULL):
@@ -66,30 +54,22 @@ def pytest_configure(config):
 
   comm = MPI.COMM_WORLD
 
-  # --------------------------------------------------------------------------------
-  mpi_reporter = getattr(config, "_mpi_reporter", None)
-  if mpi_reporter:
-    del config._mpi_reporter
-    config.pluginmanager.unregister(mpi_reporter)
-
-  # prevent opening mpi_reporterpath on worker nodes (xdist)
-  config._mpi_reporter = MPIReporter(comm)
+  config._mpi_reporter = MPIReporter(MPI.COMM_WORLD)
   config.pluginmanager.register(config._mpi_reporter)
-  # --------------------------------------------------------------------------------
+  
+  # Change terminalreporter so it uses TerminalReporterMPI
+  standard_terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
+  config.pluginmanager.unregister(standard_terminal_reporter)
 
-  # --------------------------------------------------------------------------------
-  # Reconfiguration des logs
-  standard_reporter = config.pluginmanager.getplugin('terminalreporter')
-  if comm.Get_rank() == 0:
-    mpi_log = sys.stdout
-  else:
-    mpi_log = open(f"pytest_{comm.Get_rank()}.log", "w")
-  config._mpi_log = mpi_log
-  instaprogress_reporter = TerminalReporterMPI(comm, config, mpi_log, config._mpi_reporter)
+  report_file = config.getoption("report_file")
+  if isinstance(report_file, str):
+    try:
+      config._report_file = open(report_file,'w')
+    except Exception as e:
+      terminate_with_no_exception(str(e))
 
-  config.pluginmanager.unregister(standard_reporter)
-  config.pluginmanager.register(instaprogress_reporter, 'terminalreporter')
-  # --------------------------------------------------------------------------------
+  mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, config._mpi_reporter)
+  config.pluginmanager.register(mpi_terminal_reporter, 'terminalreporter')
 
   ## --------------------------------------------------------------------------------
   ## Prevent previous load of other pytest_html
@@ -146,6 +126,7 @@ def pytest_configure(config):
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_unconfigure(config):
+  pass
   #html = getattr(config, "_html", None)
   #if html:
   #  del config._html
@@ -156,22 +137,16 @@ def pytest_unconfigure(config):
   #    del config._store[xml_key]
   #    config.pluginmanager.unregister(xml)
 
-  _mpi_log = getattr(config, "_mpi_log", None)
-  comm = MPI.COMM_WORLD
-  if _mpi_log and comm.Get_rank() > 0:
-    _mpi_log.close()
-
 @pytest.mark.tryfirst
 def pytest_sessionfinish(session, exitstatus):
-  standard_reporter = session.config.pluginmanager.getplugin('terminalreporter')
-  assert(isinstance(standard_reporter, TerminalReporterMPI))
+  mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
 
-  # if(not standard_reporter.mpi_reporter.post_done):
-  #   standard_reporter.mpi_reporter.pytest_sessionfinish(session)
-  assert(standard_reporter.mpi_reporter.post_done == True)
+  if not isinstance(mpi_terminal_reporter, TerminalReporterMPI):
+    terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" must be of type "TerminalReporterMPI"')
 
-  for i_report, report in standard_reporter.mpi_reporter.reports_gather.items():
-    # print(" \n ", i_report, " 2/ ---> ", report, "\n")
-    TerminalReporter.pytest_runtest_logreport(standard_reporter, report[0])
+  if not mpi_terminal_reporter.mpi_reporter.post_done:
+    terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" have its attribute "post_done" set to True')
 
-
+  # TODO
+  for i_report, report in mpi_terminal_reporter.mpi_reporter.reports_gather.items():
+    TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])

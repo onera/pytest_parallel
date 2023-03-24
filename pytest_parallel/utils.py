@@ -1,54 +1,44 @@
-
 import pytest
 from _pytest.nodes import Item
 
 from mpi4py import MPI
 
+def terminate_with_no_exception(error_msg):
+  """
+  Print an error message and terminates the program without launching an exception
+  PyTest does not support exceptions being thrown from virtually all `pytest_` hooks
+  """
+  import os
+  import sys
+
+  print(error_msg, file=sys.stderr)
+  os._exit(1)
+
 # --------------------------------------------------------------------------
-def get_n_proc_for_test_impl(item: Item, fixture_name) -> int :
-  """
-  """
-  n_proc_test = 1
-
-  # print("dir(item)::", dir(item))
-  try:
-    # print("dir(item.callspec)::", dir(item.callspec))
-    # print("dir(item)::", dir(item))
-    # The way to hooks parametrize : TOKEEP
-    # print("parametrize value to use ::", item.callspec.getparam('make_sub_comm'))
-    # print("parametrize value to use ::", item.callspec.getparam('sub_comm'))
-    # > On pourrai egalement essayer de hooks le vrai communicateur : ici sub_comm == Nombre de rang pour faire le test
-    n_proc_test = item.callspec.getparam(fixture_name)
-    # print(" ooooo ", item.nodeid, " ---> ", n_proc_test)
-  except AttributeError: # No decorator = sequentiel
-    pass
-  except ValueError:     # No decorator = sequentiel
-    pass
-
-  return n_proc_test
 
 def get_n_proc_for_test(item: Item) -> int :
-  n_from_sub_comm_fixture = get_n_proc_for_test_impl(item,'sub_comm')
-  n_from_comm_fixture     = get_n_proc_for_test_impl(item,'comm')
-  return max(n_from_sub_comm_fixture,n_from_comm_fixture)
+  try:
+    return item.callspec.getparam('comm')
+  except AttributeError: # no `comm` fixture => sequential test case
+    return 1
 
 # --------------------------------------------------------------------------
 def prepare_subcomm_for_tests(items):
   """
   """
   comm   = MPI.COMM_WORLD
-  n_rank = comm.size
-  i_rank = comm.rank
+  n_rank = comm.Get_size()
+  i_rank = comm.Get_rank()
 
   beg_next_rank = 0
-  for i, item in enumerate(items):
+  for item in items:
     n_proc_test = get_n_proc_for_test(item)
 
     # print(item.nodeid, "n_proc_test ::", n_proc_test)
-    if(beg_next_rank + n_proc_test > n_rank):
+    if beg_next_rank + n_proc_test > n_rank:
       beg_next_rank = 0
 
-    if(n_proc_test > n_rank):
+    if n_proc_test > n_rank:
       item._sub_comm = MPI.COMM_NULL
       # item._sub_comm = -1 # None
       continue
