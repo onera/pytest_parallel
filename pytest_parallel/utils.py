@@ -74,11 +74,12 @@ def filter_items(items):
     if item._sub_comm != MPI.COMM_NULL:
       filtered_list.append(item)
 
-    # mark the test as `skip` if its n_proc is too big 
-    # but keep the test in the current proc so it is still here
+    # mark the test as `skip` if its required number of procs is too big 
+    # but keep the test on proc 0 so it is still reported as skip
     n_proc_test = get_n_proc_for_test(item)
     if n_proc_test > n_rank:
       mark_skip(item)
-      filtered_list.append(item)
+      if comm.Get_rank() == 0:
+        filtered_list.append(item)
 
   return filtered_list

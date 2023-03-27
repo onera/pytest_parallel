@@ -35,23 +35,9 @@ class MPIReporter(object):
   def pytest_runtest_logreport(self, report):
     """
     """
-    print('DEBUG plugin pytest_runtest_logreport')
-    print("MPIReporter::pytest_runtest_logreport", report.when)
-
-    # if(self.comm.Get_rank() != 0):
-    # Egalemnt possible d'envoyer que si il est execute (donc MPI_COMM != NULL )
-    # Si skip uniquement le rang 0 le fait
-
-    has_runned  = not report.skipped and report.when == "call"
-    mpi_skipped = report.skipped and self.comm.Get_rank() == 0 and report.when == 'setup'
-    print('DEBUG plugin pytest_runtest_logreport 2')
-    if has_runned or mpi_skipped:
-      # > Attention report peut être gros (stdout dedans etc ...)
-      print('DEBUG plugin pytest_runtest_logreport bef send')
-      self.requests += [self.comm.isend(report, dest=0, tag=self.n_send)]
-      print('DEBUG plugin pytest_runtest_logreport after send')
-      self.n_send += 1
-    print('DEBUG plugin pytest_runtest_logreport 3')
+    # > Attention report peut être gros (stdout dedans etc ...)
+    self.requests += [self.comm.isend(report, dest=0, tag=self.n_send)]
+    self.n_send += 1
 
   def gather_report(self):
     """
