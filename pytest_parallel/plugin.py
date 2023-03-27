@@ -28,10 +28,6 @@ def pytest_collection_modifyitems(config, items):
 @pytest.mark.trylast
 def pytest_configure(config):
   comm = MPI.COMM_WORLD
-
-  config._mpi_reporter = MPIReporter(comm)
-  config.pluginmanager.register(config._mpi_reporter)
-
   # 0. Open `report_file` if necessary
   report_file = config.getoption("report_file")
 
@@ -48,10 +44,14 @@ def pytest_configure(config):
   config._report_file = report_file # keep a link here so we can close the file in `pytest_unconfigure`
 
   # 1. Change terminalreporter so it uses TerminalReporterMPI
+  mpi_reporter = MPIReporter(comm)
+  config.pluginmanager.register(mpi_reporter,'pytest_parallel')
+
   standard_terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
   config.pluginmanager.unregister(standard_terminal_reporter)
 
-  mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, config._mpi_reporter)
+  #mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, config._mpi_reporter)
+  mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, None)
   config.pluginmanager.register(mpi_terminal_reporter, 'terminalreporter')
 
 
@@ -125,14 +125,23 @@ def pytest_unconfigure(config):
 # --------------------------------------------------------------------------
 @pytest.mark.tryfirst
 def pytest_sessionfinish(session, exitstatus):
+  print('DEBUG plugin pytest_sessionfinish')
   mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
 
   if not isinstance(mpi_terminal_reporter, TerminalReporterMPI):
     terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" must be of type "TerminalReporterMPI"')
 
-  if not mpi_terminal_reporter.mpi_reporter.post_done:
-    terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" have its attribute "post_done" set to True')
+  
+  mpi_reporter = session.config.pluginmanager.getplugin('pytest_parallel')
+
+  if not mpi_reporter.post_done:
+    terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" does not have its attribute "post_done" set to True')
 
   # TODO
-  for i_report, report in mpi_terminal_reporter.mpi_reporter.reports_gather.items():
+  for i_report, report in mpi_reporter.reports_gather.items():
+    #print(50*'=')
+    #print(i_report)
+    #print('report[0] = |',report[0],'|')
     TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])
+  #print(100*'=')
+
