@@ -10,7 +10,7 @@ from mpi4py import MPI
 
 def test_toto():
   print("\ntoto")
-  #assert 0
+  assert 0
 
 #def test_toto():
 #  comm = MPI.COMM_WORLD

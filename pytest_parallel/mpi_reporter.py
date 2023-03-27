@@ -6,18 +6,22 @@ from collections import defaultdict
 from _pytest.reports import TestReport
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
+from _pytest.terminal import TerminalReporter #TODO DEL
+
 class MPIReporter(object):
-  __slots__ = ["mpi_reports", "comm", "n_send", "post_done", "reports_gather"]
+  __slots__ = ["mpi_reports", "comm", "n_send", "post_done", "reports_gather", "requests"]
   def __init__(self, comm):
     self.comm           = comm
     self.n_send         = 0
     self.mpi_reports    = defaultdict(list)
     self.post_done      = False
     self.reports_gather = defaultdict(list)
+    self.requests = []
 
 
   @pytest.hookimpl(tryfirst=True, hookwrapper=True)
   def pytest_runtest_makereport(self, item):
+    print('DEBUG plugin pytest_runtest_makereport')
     outcome = yield
     report = outcome.get_result()
     if item._sub_comm != MPI.COMM_NULL:
@@ -31,7 +35,8 @@ class MPIReporter(object):
   def pytest_runtest_logreport(self, report):
     """
     """
-    # print("MPIReporter::pytest_runtest_logreport", report.when)
+    print('DEBUG plugin pytest_runtest_logreport')
+    print("MPIReporter::pytest_runtest_logreport", report.when)
 
     # if(self.comm.Get_rank() != 0):
     # Egalemnt possible d'envoyer que si il est execute (donc MPI_COMM != NULL )
@@ -39,10 +44,14 @@ class MPIReporter(object):
 
     has_runned  = not report.skipped and report.when == "call"
     mpi_skipped = report.skipped and self.comm.Get_rank() == 0 and report.when == 'setup'
+    print('DEBUG plugin pytest_runtest_logreport 2')
     if has_runned or mpi_skipped:
       # > Attention report peut être gros (stdout dedans etc ...)
-      self.comm.send(report, dest=0, tag=self.n_send)
+      print('DEBUG plugin pytest_runtest_logreport bef send')
+      self.requests += [self.comm.isend(report, dest=0, tag=self.n_send)]
+      print('DEBUG plugin pytest_runtest_logreport after send')
       self.n_send += 1
+    print('DEBUG plugin pytest_runtest_logreport 3')
 
   def gather_report(self):
     """
@@ -94,6 +103,7 @@ class MPIReporter(object):
   def pytest_sessionfinish(self, session):
     """
     """
+    print('DEBUG plugin pytest_sessionfinish')
     nb_recv_tot = self.comm.reduce(self.n_send, root=0)
 
     self.comm.Barrier()
@@ -114,8 +124,16 @@ class MPIReporter(object):
       for node_id, report_list in self.mpi_reports.items():
         report_list.sort(key = lambda tup: tup[0])
 
+    MPI.Request.waitall(self.requests)
     self.comm.Barrier()
 
     self.post_done = True
 
     self.gather_report()
+
+    mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
+    for i_report, report in self.reports_gather.items():
+      #print(50*'=')
+      #print(i_report)
+      #print('report[0] = |',report[0],'|')
+      TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])

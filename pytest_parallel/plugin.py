@@ -50,7 +50,7 @@ def pytest_configure(config):
   standard_terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
   config.pluginmanager.unregister(standard_terminal_reporter)
 
-  #mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, config._mpi_reporter)
+  #mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, mpi_reporter)
   mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, None)
   config.pluginmanager.register(mpi_terminal_reporter, 'terminalreporter')
 
@@ -78,7 +78,7 @@ def pytest_configure(config):
 
   #  if not hasattr(config, "workerinput"):
   #    # prevent opening htmlpath on worker nodes (xdist)
-  #    config._html = HTMLReportMPI(comm, htmlpath, config, config._mpi_reporter)
+  #    config._html = HTMLReportMPI(comm, htmlpath, config, mpi_reporter)
   #    config.pluginmanager.register(config._html)
   ## --------------------------------------------------------------------------------
 
@@ -95,7 +95,7 @@ def pytest_configure(config):
   #    junit_family = config.getini("junit_family")
   #    config._store[xml_key] = LogXMLMPI(
   #        comm,
-  #        config._mpi_reporter,
+  #        mpi_reporter,
   #        xmlpath,
   #        config.option.junitprefix,
   #        config.getini("junit_suite_name"),
@@ -121,27 +121,3 @@ def pytest_unconfigure(config):
   #if xml:
   #    del config._store[xml_key]
   #    config.pluginmanager.unregister(xml)
-
-# --------------------------------------------------------------------------
-@pytest.mark.tryfirst
-def pytest_sessionfinish(session, exitstatus):
-  print('DEBUG plugin pytest_sessionfinish')
-  mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
-
-  if not isinstance(mpi_terminal_reporter, TerminalReporterMPI):
-    terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" must be of type "TerminalReporterMPI"')
-
-  
-  mpi_reporter = session.config.pluginmanager.getplugin('pytest_parallel')
-
-  if not mpi_reporter.post_done:
-    terminate_with_no_exception('pytest_parallel.pytest_sessionfinish: the "terminalreporter" does not have its attribute "post_done" set to True')
-
-  # TODO
-  for i_report, report in mpi_reporter.reports_gather.items():
-    #print(50*'=')
-    #print(i_report)
-    #print('report[0] = |',report[0],'|')
-    TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])
-  #print(100*'=')
-
