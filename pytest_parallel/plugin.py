@@ -31,9 +31,9 @@ def pytest_configure(config):
   # 0. Open `report_file` if necessary
   report_file = config.getoption("report_file")
 
-  # TODO change TerminalReporterMPI to not need to do that
-  if comm.Get_rank() != 0:
-    report_file = f'pytest.{comm.Get_rank()}.log'
+  ## TODO change TerminalReporterMPI to not need to do that
+  #if comm.Get_rank() != 0:
+  #  report_file = f'pytest.{comm.Get_rank()}.log'
 
   if isinstance(report_file, str):
     try:
@@ -110,6 +110,7 @@ def pytest_configure(config):
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_unconfigure(config):
+  print('START pytest_unconfigure')
   if config._report_file is not None:
     config._report_file.close()
   #html = getattr(config, "_html", None)
@@ -121,3 +122,9 @@ def pytest_unconfigure(config):
   #if xml:
   #    del config._store[xml_key]
   #    config.pluginmanager.unregister(xml)
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_sessionfinish(session):
+  print('START plugin pytest_sessionfinish')
+  outcome = yield
+  print('END plugin pytest_sessionfinish')

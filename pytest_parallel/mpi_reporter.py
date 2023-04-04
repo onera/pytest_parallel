@@ -1,119 +1,154 @@
 import pytest
 
 from mpi4py import MPI
-from collections import defaultdict
+import numpy as np
 
 from _pytest.reports import TestReport
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
 from _pytest.terminal import TerminalReporter #TODO DEL
 
-def gather_reports(mpi_reports, comm):
-  reports_gather = defaultdict(list)
 
-  for nodeid, report_list in mpi_reports.items():
-    # print("nodeid::", nodeid)
+def gather_report(mpi_reports, sub_comm, global_comm):
+  assert len(mpi_reports) == sub_comm.Get_size()
 
-    assert len(report_list) > 0 # TODO non-throwing
+  report_init = mpi_reports[0]
+  goutcome = report_init.outcome
+  glongrepr = report_init.longrepr
 
-    # > Initialize with the first reporter
-    i_rank_report_init, report_init = report_list[0]
+  collect_longrepr = []
+  # > We need to rebuild a TestReport object, location can be false
+  # > Report appears in rank increasing order
+  if goutcome != 'skipped':
+    # Skipped test are only know by proc 0 -> no merge required
+    for test_report in mpi_reports:
 
-    greport = TestReport(nodeid,
-                         report_init.location,
-                         report_init.keywords,
-                         report_init.outcome,
-                         report_init.longrepr, # longrepr
-                         report_init.when)
+      if test_report.outcome == 'failed':
+        goutcome = test_report.outcome
 
-    # print("report_init.location::", report_init.location)
-    # print("report_init.longrepr::", type(report_init.longrepr), report_init.longrepr)
+      #print('test_report.longrepr = ||',test_report.longrepr,30*'|=')
 
-    collect_longrepr = []
-    # > We need to rebuild a TestReport object, location can be false
-    # > Report appears in rank increasing order
-    if greport.outcome != 'skipped':
-      # Skipped test are only know by proc 0 -> no merge required
-      for i_rank_report, test_report in report_list:
+      if test_report.longrepr:
+        msg = f'On local [{sub_comm.Get_rank()}/{sub_comm.Get_size()}] | global [{global_comm.Get_rank()}/{global_comm.Get_size()}]'
+        full_msg = f'\n\n----------------------- {msg} ----------------------- \n\n'
+        fake_trace_back = ReprTraceback([ReprEntryNative(full_msg)], None, None)
+        collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
+        collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
 
-        if test_report.outcome == 'failed':
-          greport.outcome = test_report.outcome
+    if len(collect_longrepr) > 0:
+      glongrepr = ExceptionChainRepr(collect_longrepr)
 
-        if test_report.longrepr:
-          fake_trace_back = ReprTraceback([ReprEntryNative(f"\n\n----------------------- On rank [{test_report._i_rank}/{test_report._n_rank}] / Global [{i_rank_report}/{comm.Get_size()}] ----------------------- \n\n")], None, None)
-          collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
-          collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
+  return goutcome, glongrepr
 
-      if len(collect_longrepr) > 0:
-        greport.longrepr = ExceptionChainRepr(collect_longrepr)
-
-    reports_gather[nodeid] = [greport]
-  # -----------------------------------------------------------------
-  return reports_gather
 
 class MPIReporter(object):
-  __slots__ = ["mpi_reports", "comm", "n_send", "requests"]
-  def __init__(self, comm):
-    self.comm           = comm
-    self.n_send         = 0
-    self.requests = []
+  __slots__ = ['global_comm']
+  def __init__(self, global_comm):
+    self.global_comm = global_comm
 
 
-  @pytest.hookimpl(tryfirst=True, hookwrapper=True)
+  @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
-    print('DEBUG plugin pytest_runtest_makereport')
+    """
+      Need to hook to pass the test sub-comm to `pytest_runtest_logreport`,
+      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+    """
+    print('START pytest_runtest_makereport')
     outcome = yield
     report = outcome.get_result()
-    if item._sub_comm != MPI.COMM_NULL:
-      report._i_rank = item._sub_comm.Get_rank()
-      report._n_rank = item._sub_comm.Get_size()
-    else:
-      report._i_rank = 0
-      report._n_rank = 1
+    report._sub_comm = item._sub_comm
+    print('END pytest_runtest_makereport')
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     """
     """
-    # > Attention report peut être gros (stdout dedans etc ...)
-    self.requests += [self.comm.isend(report, dest=0, tag=self.n_send)]
-    self.n_send += 1
+    print('START pytest_runtest_logreport')
+    sub_comm = report._sub_comm
+    del report._sub_comm
 
+    # Warning: PyTest reports can actually be quite big
+    request = sub_comm.isend(report, dest=0, tag=sub_comm.Get_rank())
 
-  @pytest.mark.tryfirst
-  def pytest_sessionfinish(self, session):
-    """
-    """
-    print('DEBUG plugin pytest_sessionfinish')
-    self.comm.Barrier()
-    n_send_tot = self.comm.reduce(self.n_send, root=0)
-
-
-    if self.comm.Get_rank() == 0:
-      mpi_reports    = defaultdict(list)
-      for _ in range(n_send_tot):
+    if sub_comm.Get_rank() == 0:
+      mpi_reports = sub_comm.Get_size() * [None]
+      for _ in range(sub_comm.Get_size()):
         status = MPI.Status()
-        # print(dir(status))
-        is_ok_to_recv = self.comm.probe(MPI.ANY_SOURCE, MPI.ANY_TAG, status=status)
-        if is_ok_to_recv:
-          report = self.comm.recv(source=status.Get_source(), tag=status.Get_tag())
-          # > On fait un dictionnaire en attendant de faire list + tri indirect
-          if report:
-            # self.mpi_reports[(status.Get_source(),report.nodeid)].append(report)
-            mpi_reports[report.nodeid].append((status.Get_source(), report))
 
-      # > Sort by increasing rank number
-      for node_id, report_list in mpi_reports.items():
-        report_list.sort(key = lambda tup: tup[0])
+        mpi_report = sub_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+        mpi_reports[status.Get_source()] = mpi_report
+
+      assert None not in mpi_reports # should have received from all ranks of `sub_comm`
+      goutcome, glongrepr = gather_report(mpi_reports, sub_comm, self.global_comm)
+
+      # report.location = report_gather.location# TODO
+      #report.outcome  = goutcome
+      report.longrepr = glongrepr
+      #report.longrepr = 50*str(self.global_comm.Get_rank())
+    else:
+      # report.location = # TODO
+      # report.outcome  = # TODO gather from 0
+      report.longrepr = None
+
+    request.wait()
+    print('END pytest_runtest_logreport')
+
+  @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+  def pytest_terminal_summary(self):
+    print('START pytest_terminal_summary')
+    outcome = yield
+    print('END pytest_terminal_summary')
+
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_terminal_summary(self):
+  #  self.summary_errors()
+  #  self.summary_failures()
+  #  self.summary_warnings()
+  #  self.summary_passes()
+  #  yield
+  #  self.short_test_summary()
+  #  # Display any extra warnings from teardown here (if any).
+  #  self.summary_warnings()
+
+  #@pytest.hookimpl(hookwrapper=True, trylast=True)
+  #def pytest_sessionfinish(self, session):
+  #  print('START pytest_sessionfinish')
+  #  outcome = yield
+  #  report = outcome.get_result()
+  #  print('END pytest_sessionfinish')
+
+  #@pytest.mark.tryfirst
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_sessionfinish(self, session):
+  #  """
+  #  """
+  #  self.global_comm.Barrier()
+  #  n_send_tot = self.global_comm.reduce(self.n_send, root=0)
 
 
-      reports_gather = gather_reports(mpi_reports, self.comm)
+  #  if self.global_comm.Get_rank() == 0:
+  #    mpi_reports_by_node_id = defaultdict(list)
+  #    for _ in range(n_send_tot):
+  #      status = MPI.Status()
+  #      # print(dir(status))
+  #      is_ok_to_recv = self.global_comm.probe(MPI.ANY_SOURCE, MPI.ANY_TAG, status=status)
+  #      if is_ok_to_recv:
+  #        report = self.global_comm.recv(source=status.Get_source(), tag=status.Get_tag())
+  #        if report:
+  #          mpi_reports_by_node_id[report.nodeid].append(MPI_report(status.Get_source(), report))
 
-      mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
-      for i_report, report in reports_gather.items():
-        #print(50*'=')
-        #print(i_report)
-        #print('report[0] = |',report[0],'|')
-        TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])
+  #    # > Sort by increasing rank number
+  #    for _, mpi_reports  in mpi_reports_by_node_id.items():
+  #      mpi_reports.sort(key = lambda mpi_report: mpi_report.source_rank)
 
-    MPI.Request.waitall(self.requests)
+
+  #    reports_gather = gather_reports(mpi_reports_by_node_id, self.global_comm)
+
+  #    mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
+  #    for i_report, report in reports_gather.items():
+  #      #print(50*'=')
+  #      #print(i_report)
+  #      #print('report[0] = |',report[0],'|')
+  #      TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])
+
+  #  MPI.Request.waitall(self.requests)

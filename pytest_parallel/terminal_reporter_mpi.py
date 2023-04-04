@@ -20,10 +20,10 @@ class TerminalReporterMPI(TerminalReporter):
     self.comm         = comm
     self.mpi_reporter = mpi_reporter
 
-  def pytest_runtest_logreport(self, report):
-    """
-    Do not report cause you redo it after the gather
-    """
-    pass
+  #def pytest_runtest_logreport(self, report):
+  #  """
+  #  Do not report cause you redo it after the gather
+  #  """
+  #  pass
 
 

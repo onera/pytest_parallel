@@ -56,9 +56,7 @@ def prepare_subcomm_for_tests(items):
       comm_split = comm.Split(color)
 
       if comm_split != MPI.COMM_NULL:
-        # assert comm_split.Get_size() == n_proc_test:
-        if comm_split.Get_size() != n_proc_test:
-          terminate_with_no_exception('pytest_parallel.prepare_subcomm_for_tests: comm_split.size != n_proc_test')
+        assert comm_split.Get_size() == n_proc_test
 
       item._sub_comm = comm_split
       beg_next_rank += n_proc_test

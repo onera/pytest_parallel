@@ -2,11 +2,11 @@
 
 from mpi4py import MPI
 
-#def test_true():
-#  assert True
-#
-#def test_false():
-#  assert True
+def test_true():
+  assert True
+
+def test_false():
+  assert True
 
 def test_toto():
   print("\ntoto")
