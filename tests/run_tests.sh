@@ -27,3 +27,15 @@ diff test4.log ref/test4.log
 
 mpirun -np 1 pytest -s -ra -vv /scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/tests/test_two_failing_tests.py
 mpirun -np 2 pytest -s -ra -vv /scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/tests/test_two_failing_tests.py
+
+
+# seq, static
+mpirun -np 1 pytest -s -ra -vv test_two_fail_tests_one_proc.py
+mpirun -np 2 pytest -s -ra -vv test_two_fail_tests_two_proc.py
+mpirun -np 2 pytest -s -ra -vv test_two_success_fail_tests_two_procs.py
+mpirun -np 2 pytest -s -ra -vv test_two_success_tests_two_proc.py
+
+mpirun -np 2 pytest -s -ra -vv test_two_fail_tests_one_proc.py
+mpirun -np 4 pytest -s -ra -vv test_two_fail_tests_two_proc.py
+mpirun -np 4 pytest -s -ra -vv test_two_success_fail_tests_two_procs.py
+mpirun -np 4 pytest -s -ra -vv test_two_success_tests_two_proc.py

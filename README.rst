@@ -28,7 +28,13 @@ This `pytest`_ plugin was generated with `Cookiecutter`_ along with `@hackebrot`
 Features
 --------
 
-* TODO
+1. Cloisonner c'est très bien => on fait ça pour la base de test sonics
+  Mais c'est lourd => pas pour Maia
+2. il existe un mécanisme de "fault handler" qui peut permettre de gérer les segfault par autre chose que par un crash -> à investiguer
+3. Pour PyTest il nous faut sans doute plusieurs schedulers en fait :
+  1. au moins un pseudo-seq facile à débugger => c'est le plus important
+  2. un statique (celui actuel) 
+  3. un dynamique
 
 
 Requirements

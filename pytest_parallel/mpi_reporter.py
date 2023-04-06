@@ -1,13 +1,14 @@
 import pytest
 
 from mpi4py import MPI
-import numpy as np
 
-from _pytest.reports import TestReport
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
-from _pytest.terminal import TerminalReporter #TODO DEL
+from .utils import number_of_working_processes, get_n_proc_for_test#, filter_and_add_sub_comm, filter_items
 
+#from more_itertools import partition
+import numpy as np
+from bisect import bisect_left
 
 def gather_report(mpi_reports, sub_comm, global_comm):
   assert len(mpi_reports) == sub_comm.Get_size()
@@ -17,32 +18,26 @@ def gather_report(mpi_reports, sub_comm, global_comm):
   glongrepr = report_init.longrepr
 
   collect_longrepr = []
-  # > We need to rebuild a TestReport object, location can be false
-  # > Report appears in rank increasing order
-  if goutcome != 'skipped':
-    # Skipped test are only know by proc 0 -> no merge required
-    for test_report in mpi_reports:
+  # > We need to rebuild a TestReport object, location can be false # TODO ?
+  for test_report in mpi_reports:
 
-      if test_report.outcome == 'failed':
-        goutcome = test_report.outcome
+    if test_report.outcome == 'failed':
+      goutcome = 'failed'
 
-      #print('test_report.longrepr = ||',test_report.longrepr,30*'|=')
+    if test_report.longrepr:
+      msg = f'On local [{sub_comm.Get_rank()}/{sub_comm.Get_size()}] | global [{global_comm.Get_rank()}/{global_comm.Get_size()}]'
+      full_msg = f'\n\n----------------------- {msg} ----------------------- \n\n'
+      fake_trace_back = ReprTraceback([ReprEntryNative(full_msg)], None, None)
+      collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
+      collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
 
-      if test_report.longrepr:
-        msg = f'On local [{sub_comm.Get_rank()}/{sub_comm.Get_size()}] | global [{global_comm.Get_rank()}/{global_comm.Get_size()}]'
-        full_msg = f'\n\n----------------------- {msg} ----------------------- \n\n'
-        fake_trace_back = ReprTraceback([ReprEntryNative(full_msg)], None, None)
-        collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
-        collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
-
-    if len(collect_longrepr) > 0:
-      glongrepr = ExceptionChainRepr(collect_longrepr)
+  if len(collect_longrepr) > 0:
+    glongrepr = ExceptionChainRepr(collect_longrepr)
 
   return goutcome, glongrepr
 
 
 class MPIReporter(object):
-  __slots__ = ['global_comm']
   def __init__(self, global_comm):
     self.global_comm = global_comm
 
@@ -53,102 +48,204 @@ class MPIReporter(object):
       Need to hook to pass the test sub-comm to `pytest_runtest_logreport`,
       and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
     """
-    print('START pytest_runtest_makereport')
     outcome = yield
     report = outcome.get_result()
     report._sub_comm = item._sub_comm
-    print('END pytest_runtest_makereport')
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     """
     """
-    print('START pytest_runtest_logreport')
     sub_comm = report._sub_comm
-    del report._sub_comm
+    del report._sub_comm # No need to keep it in the report
+                         # Furthermore we need to serialize the report
+                         # and mpi4py does not know how to serialize report._sub_comm
 
-    # Warning: PyTest reports can actually be quite big
-    request = sub_comm.isend(report, dest=0, tag=sub_comm.Get_rank())
+    if report.outcome != 'skipped': # Skipped test are only known by proc 0 -> no merge required
+      # Warning: PyTest reports can actually be quite big
+      request = sub_comm.isend(report, dest=0, tag=sub_comm.Get_rank())
 
-    if sub_comm.Get_rank() == 0:
-      mpi_reports = sub_comm.Get_size() * [None]
-      for _ in range(sub_comm.Get_size()):
-        status = MPI.Status()
+      if sub_comm.Get_rank() == 0:
+        mpi_reports = sub_comm.Get_size() * [None]
+        for _ in range(sub_comm.Get_size()):
+          status = MPI.Status()
 
-        mpi_report = sub_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-        mpi_reports[status.Get_source()] = mpi_report
+          mpi_report = sub_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+          mpi_reports[status.Get_source()] = mpi_report
 
-      assert None not in mpi_reports # should have received from all ranks of `sub_comm`
-      goutcome, glongrepr = gather_report(mpi_reports, sub_comm, self.global_comm)
+        assert None not in mpi_reports # should have received from all ranks of `sub_comm`
+        goutcome, glongrepr = gather_report(mpi_reports, sub_comm, self.global_comm)
 
-      # report.location = report_gather.location# TODO
-      #report.outcome  = goutcome
-      report.longrepr = glongrepr
-      #report.longrepr = 50*str(self.global_comm.Get_rank())
+        # report.location = report_gather.location# TODO
+        #report.outcome  = goutcome
+        report.longrepr = glongrepr
+        #report.longrepr = 50*str(self.global_comm.Get_rank())
+      else:
+        # report.location = # TODO
+        # report.outcome  = # TODO gather from 0
+        report.longrepr = None
+
+      request.wait()
+
+def filter_and_add_sub_comm(items, global_comm):
+  i_rank    = global_comm.Get_rank()
+  n_workers = global_comm.Get_size()
+
+  filtered_items = []
+  for item in items:
+    n_proc_test = get_n_proc_for_test(item)
+
+    if n_proc_test > n_workers: # not enough procs: will be skipped
+      if comm.Get_rank() == 0:
+        item._sub_comm = MPI.COMM_SELF
+        filtered_items += [item]
+      else:
+        item._sub_comm = MPI.COMM_NULL
     else:
-      # report.location = # TODO
-      # report.outcome  = # TODO gather from 0
-      report.longrepr = None
+      if i_rank < n_proc_test:
+        color = 1
+      else:
+        color = MPI.UNDEFINED
 
-    request.wait()
-    print('END pytest_runtest_logreport')
+      sub_comm = global_comm.Split(color)
 
-  @pytest.hookimpl(hookwrapper=True, tryfirst=True)
-  def pytest_terminal_summary(self):
-    print('START pytest_terminal_summary')
-    outcome = yield
-    print('END pytest_terminal_summary')
+      if sub_comm != MPI.COMM_NULL:
+        item._sub_comm = sub_comm
+        filtered_items += [item]
 
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_terminal_summary(self):
-  #  self.summary_errors()
-  #  self.summary_failures()
-  #  self.summary_warnings()
-  #  self.summary_passes()
-  #  yield
-  #  self.short_test_summary()
-  #  # Display any extra warnings from teardown here (if any).
-  #  self.summary_warnings()
-
-  #@pytest.hookimpl(hookwrapper=True, trylast=True)
-  #def pytest_sessionfinish(self, session):
-  #  print('START pytest_sessionfinish')
-  #  outcome = yield
-  #  report = outcome.get_result()
-  #  print('END pytest_sessionfinish')
-
-  #@pytest.mark.tryfirst
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_sessionfinish(self, session):
-  #  """
-  #  """
-  #  self.global_comm.Barrier()
-  #  n_send_tot = self.global_comm.reduce(self.n_send, root=0)
+  return filtered_items
 
 
-  #  if self.global_comm.Get_rank() == 0:
-  #    mpi_reports_by_node_id = defaultdict(list)
-  #    for _ in range(n_send_tot):
-  #      status = MPI.Status()
-  #      # print(dir(status))
-  #      is_ok_to_recv = self.global_comm.probe(MPI.ANY_SOURCE, MPI.ANY_TAG, status=status)
-  #      if is_ok_to_recv:
-  #        report = self.global_comm.recv(source=status.Get_source(), tag=status.Get_tag())
-  #        if report:
-  #          mpi_reports_by_node_id[report.nodeid].append(MPI_report(status.Get_source(), report))
+class sequential_scheduler(MPIReporter):
+  def __init__(self, global_comm):
+    MPIReporter.__init__(self, global_comm)
 
-  #    # > Sort by increasing rank number
-  #    for _, mpi_reports  in mpi_reports_by_node_id.items():
-  #      mpi_reports.sort(key = lambda mpi_report: mpi_report.source_rank)
+  @pytest.mark.trylast
+  def pytest_collection_modifyitems(self, config, items):
+    items[:] = filter_and_add_sub_comm(items, self.global_comm)
 
 
-  #    reports_gather = gather_reports(mpi_reports_by_node_id, self.global_comm)
-
-  #    mpi_terminal_reporter = session.config.pluginmanager.getplugin('terminalreporter')
-  #    for i_report, report in reports_gather.items():
-  #      #print(50*'=')
-  #      #print(i_report)
-  #      #print('report[0] = |',report[0],'|')
-  #      TerminalReporter.pytest_runtest_logreport(mpi_terminal_reporter, report[0])
-
-  #  MPI.Request.waitall(self.requests)
+#def run_item_test(item, nextitem, session):
+#  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+#  if session.shouldfail:
+#      raise session.Failed(session.shouldfail)
+#  if session.shouldstop:
+#      raise session.Interrupted(session.shouldstop)
+#
+#
+#class static_scheduler(MPIReporter):
+#  def __init__(self, global_comm):
+#    MPIReporter.__init__(self, global_comm)
+#    print('\n\nstatic_scheduler\n\n')
+#
+#  @pytest.mark.tryfirst
+#  def pytest_runtestloop(self, session) -> bool:
+#    if session.testsfailed and not session.config.option.continue_on_collection_errors:
+#      raise session.Interrupted(
+#        "%d error%s during collection"
+#        % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+#      )
+#
+#    if session.config.option.collectonly:
+#      return True
+#
+#    n_workers = number_of_working_processes(self.global_comm)
+#
+#    items_by_steps,items_to_skip = group_items_by_parallel_steps(session.items)
+#
+#    for i, item in enumerate(session.items):
+#      nextitem = session.items[i + 1] if i + 1 < len(session.items) else None
+#      run_item_test(item, nextitem, session)
+#    return True
+#
+#
+#def run_item_test(item, session):
+#  nextitem = None # not known at this point
+#  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+#  if session.shouldfail:
+#    raise session.Failed(session.shouldfail)
+#  if session.shouldstop:
+#    raise session.Interrupted(session.shouldstop)
+#
+#
+#def sub_comm_from_ranks(global_comm, sub_ranks):
+#  group = global_comm.group()
+#  sub_group = group.Incl(sub_ranks)
+#  sub_comm = global_comm.Create_group(sub_group)
+#  return sub_comm
+#
+## TODO bisect_left with key arg only available in Python 3.10
+#def bisect_left(a, x, lo=0, hi=None, *, key=None):
+#    if lo < 0:
+#        raise ValueError('lo must be non-negative')
+#    if hi is None:
+#        hi = len(a)
+#    # Note, the comparison uses "<" to match the
+#    # __lt__() logic in list.sort() and in heapq.
+#    if key is None:
+#        while lo < hi:
+#            mid = (lo + hi) // 2
+#            if a[mid] < x:
+#                lo = mid + 1
+#            else:
+#                hi = mid
+#    else:
+#        while lo < hi:
+#            mid = (lo + hi) // 2
+#            if key(a[mid]) < x:
+#                lo = mid + 1
+#            else:
+#                hi = mid
+#    return lo
+#
+#def item_with_biggest_admissible_n_proc(
+#  return = bisect_left(items_to_run, n_av_procs, key=lambda item: item._n_mpi_proc)
+#
+#class dynamic_scheduler(MPIReporter):
+#  def __init__(self, global_comm, inter_comm):
+#    MPIReporter.__init__(self, global_comm)
+#    self.inter_comm = inter_comm
+#    print('\n\ndynamic_scheduler\n\n')
+#
+#  @pytest.mark.tryfirst
+#  def pytest_runtestloop(self, session) -> bool:
+#    if session.testsfailed and not session.config.option.continue_on_collection_errors:
+#      raise session.Interrupted(
+#        "%d error%s during collection"
+#        % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+#      )
+#
+#    if session.config.option.collectonly:
+#      return True
+#
+#  # parallel algo begin
+#    n_workers = number_of_working_processes(comm)
+#
+#    # add proc to items
+#    add_n_procs(session.items)
+#
+#    # isolate skips
+#    has_enough_procs = lambda item: item._n_mpi_proc <= n_workers
+#    items_to_skip, items_to_run = partition(has_enough_procs, session.items)
+#
+#    # mark and run skip
+#    for item in items_to_skip:
+#      mark_skip(item)
+#      run_item_test(item, session)
+#
+#    items_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)
+#    available_procs = np.ones(n_workers, dtype=np.int8)
+#
+#    while len(items_to_run) > 0:
+#      n_av_procs = np.sum(available_procs)
+#
+#      item = item_with_biggest_admissible_n_proc(items_to_run, n_av_procs)
+#
+#      
+#
+#
+#    sub_comm_from_ranks(global_comm, sub_ranks)
+#
+#    for item in items:
+#      run_item_test(item, session)
+#    return True

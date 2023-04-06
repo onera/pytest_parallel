@@ -5,54 +5,68 @@ from .mark import comm # seems unused, but used by pytest # TODO check
 
 from mpi4py import MPI
 
+from .mpi_reporter import sequential_scheduler#, static_scheduler, dynamic_scheduler
+
 #from .html_mpi     import HTMLReportMPI
 #from .junit_mpi    import LogXMLMPI
-from .terminal_reporter_mpi import TerminalReporterMPI
-from .mpi_reporter import MPIReporter
 #from _pytest.junitxml import xml_key
 
-from .utils import prepare_subcomm_for_tests, filter_items, terminate_with_no_exception
+#from .utils import prepare_subcomm_for_tests, filter_items, terminate_with_no_exception
 
 from _pytest.terminal import TerminalReporter
 
 def pytest_addoption(parser):
-  parser.addoption('--report-file', dest='report_file', default=None)
+  #parser.addoption('--report-file', dest='report_file', default=None)
+  parser.addoption('--scheduler', dest='scheduler', type='choice', choices=['sequential','static','dynamic'], default='sequential')
 
-# --------------------------------------------------------------------------
-@pytest.mark.trylast
-def pytest_collection_modifyitems(config, items):
-  prepare_subcomm_for_tests(items)
-  items[:] = filter_items(items)
+## --------------------------------------------------------------------------
+#@pytest.mark.trylast
+#def pytest_collection_modifyitems(config, items):
+#  prepare_subcomm_for_tests(items)
+#  items[:] = filter_items(items)
+#  print('len items = ',len(items))
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
 def pytest_configure(config):
-  comm = MPI.COMM_WORLD
-  # 0. Open `report_file` if necessary
-  report_file = config.getoption("report_file")
+  global_comm = MPI.COMM_WORLD
 
-  ## TODO change TerminalReporterMPI to not need to do that
-  #if comm.Get_rank() != 0:
-  #  report_file = f'pytest.{comm.Get_rank()}.log'
+  scheduler = config.getoption('scheduler')
+  if scheduler == 'sequential':
+    plugin = sequential_scheduler(global_comm)
+  elif scheduler == 'static':
+    plugin = static_scheduler(global_comm)
+  elif scheduler == 'dynamic':
+    inter_comm = spawn_master_process(global_comm)
+    plugin = dynamic_scheduler(global_comm, inter_comm)
+  else:
+    assert 0, 'pytest_configure: unknown scheduler' # TODO pytest error reporting
+
+  config.pluginmanager.register(plugin,'pytest_parallel')
+
+  ## 0. Open `report_file` if necessary
+  #report_file = config.getoption("report_file")
+
+  # TODO make `pytest_terminal_summary` do nothing on rank!=0 (hook with non-None result?)
+  if global_comm.Get_rank() == 0:
+  #parent_comm = global_comm.Get_parent();
+  #if parent_comm != MPI.COMM_NULL:
+    report_file = None
+  else:
+    report_file = f'pytest.{global_comm.Get_rank()}.log'
 
   if isinstance(report_file, str):
     try:
       report_file = open(report_file,'w')
     except Exception as e:
-      terminate_with_no_exception(str(e))
+      terminate_with_no_exception(str(e)) # TODO use Pytest terminate mecha
 
-  config._report_file = report_file # keep a link here so we can close the file in `pytest_unconfigure`
+  terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
+  config.pluginmanager.unregister(terminal_reporter)
+  terminal_reporter= TerminalReporter(config, report_file)
+  config.pluginmanager.register(terminal_reporter,'terminalreporter')
 
-  # 1. Change terminalreporter so it uses TerminalReporterMPI
-  mpi_reporter = MPIReporter(comm)
-  config.pluginmanager.register(mpi_reporter,'pytest_parallel')
-
-  standard_terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
-  config.pluginmanager.unregister(standard_terminal_reporter)
-
-  #mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, mpi_reporter)
-  mpi_terminal_reporter = TerminalReporterMPI(comm, config, report_file, None)
-  config.pluginmanager.register(mpi_terminal_reporter, 'terminalreporter')
+  #config._report_file = report_file # keep a link here so we can close the file in `pytest_unconfigure`
 
 
   ## --------------------------------------------------------------------------------
@@ -78,7 +92,7 @@ def pytest_configure(config):
 
   #  if not hasattr(config, "workerinput"):
   #    # prevent opening htmlpath on worker nodes (xdist)
-  #    config._html = HTMLReportMPI(comm, htmlpath, config, mpi_reporter)
+  #    config._html = HTMLReportMPI(comm, htmlpath, config, plugin)
   #    config.pluginmanager.register(config._html)
   ## --------------------------------------------------------------------------------
 
@@ -95,7 +109,7 @@ def pytest_configure(config):
   #    junit_family = config.getini("junit_family")
   #    config._store[xml_key] = LogXMLMPI(
   #        comm,
-  #        mpi_reporter,
+  #        plugin,
   #        xmlpath,
   #        config.option.junitprefix,
   #        config.getini("junit_suite_name"),
@@ -107,24 +121,24 @@ def pytest_configure(config):
   #    config.pluginmanager.register(config._store[xml_key])
   ## --------------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------
-@pytest.mark.trylast
-def pytest_unconfigure(config):
-  print('START pytest_unconfigure')
-  if config._report_file is not None:
-    config._report_file.close()
-  #html = getattr(config, "_html", None)
-  #if html:
-  #  del config._html
-  #  config.pluginmanager.unregister(html)
-
-  #xml = config._store.get(xml_key, None)
-  #if xml:
-  #    del config._store[xml_key]
-  #    config.pluginmanager.unregister(xml)
-
-@pytest.hookimpl(hookwrapper=True, tryfirst=True)
-def pytest_sessionfinish(session):
-  print('START plugin pytest_sessionfinish')
-  outcome = yield
-  print('END plugin pytest_sessionfinish')
+## --------------------------------------------------------------------------
+#@pytest.mark.trylast
+#def pytest_unconfigure(config):
+#  if config._report_file is not None:
+#    config._report_file.close()
+#
+#  #html = getattr(config, "_html", None)
+#  #if html:
+#  #  del config._html
+#  #  config.pluginmanager.unregister(html)
+#
+#  #xml = config._store.get(xml_key, None)
+#  #if xml:
+#  #    del config._store[xml_key]
+#  #    config.pluginmanager.unregister(xml)
+#
+#@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+#def pytest_sessionfinish(session):
+#  print('START plugin pytest_sessionfinish')
+#  outcome = yield
+#  print('END plugin pytest_sessionfinish')
