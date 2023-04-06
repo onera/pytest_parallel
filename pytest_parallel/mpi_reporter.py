@@ -116,6 +116,10 @@ def filter_and_add_sub_comm(items, global_comm):
   return filtered_items
 
 
+
+
+
+
 class sequential_scheduler(MPIReporter):
   def __init__(self, global_comm):
     MPIReporter.__init__(self, global_comm)
@@ -125,40 +129,74 @@ class sequential_scheduler(MPIReporter):
     items[:] = filter_and_add_sub_comm(items, self.global_comm)
 
 
-#def run_item_test(item, nextitem, session):
-#  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
-#  if session.shouldfail:
-#      raise session.Failed(session.shouldfail)
-#  if session.shouldstop:
-#      raise session.Interrupted(session.shouldstop)
-#
-#
-#class static_scheduler(MPIReporter):
-#  def __init__(self, global_comm):
-#    MPIReporter.__init__(self, global_comm)
-#    print('\n\nstatic_scheduler\n\n')
-#
-#  @pytest.mark.tryfirst
-#  def pytest_runtestloop(self, session) -> bool:
-#    if session.testsfailed and not session.config.option.continue_on_collection_errors:
-#      raise session.Interrupted(
-#        "%d error%s during collection"
-#        % (session.testsfailed, "s" if session.testsfailed != 1 else "")
-#      )
-#
-#    if session.config.option.collectonly:
-#      return True
-#
-#    n_workers = number_of_working_processes(self.global_comm)
-#
-#    items_by_steps,items_to_skip = group_items_by_parallel_steps(session.items)
-#
-#    for i, item in enumerate(session.items):
-#      nextitem = session.items[i + 1] if i + 1 < len(session.items) else None
-#      run_item_test(item, nextitem, session)
-#    return True
-#
-#
+
+
+
+
+def group_items_by_parallel_steps(items, n_workers):
+  add_n_procs(items)
+  items.sort(key=lambda item: item._n_mpi_proc, reverse=True)
+
+  remaining_n_procs_by_step = []
+  items_by_step = []
+  items_to_skip = []
+  for item in items:
+    if item._n_mpi_proc > n_workers[i]:
+      items_to_skip += [item]
+    else:
+      found_step = False
+      for i in range(len(remaining_n_procs_by_step)):
+        if item._n_mpi_proc <= remaining_n_procs_by_step[i]:
+          items_by_step[i] += [item]
+          remaining_n_procs_by_step[i] -= item._n_mpi_proc
+          found_step = True
+          break
+      if not found_step:
+        items_by_step += [[item]]
+        remaining_n_procs_by_step += [n_worker - item._n_mpi_proc]
+
+  return items_by_step, items_to_skip
+
+
+def run_item_test(item, nextitem, session):
+  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  if session.shouldfail:
+      raise session.Failed(session.shouldfail)
+  if session.shouldstop:
+      raise session.Interrupted(session.shouldstop)
+
+
+class static_scheduler(MPIReporter):
+  def __init__(self, global_comm):
+    MPIReporter.__init__(self, global_comm)
+    print('\n\nstatic_scheduler\n\n')
+
+  @pytest.mark.tryfirst
+  def pytest_runtestloop(self, session) -> bool:
+    if session.testsfailed and not session.config.option.continue_on_collection_errors:
+      raise session.Interrupted(
+        "%d error%s during collection"
+        % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+      )
+
+    if session.config.option.collectonly:
+      return True
+
+    n_workers = self.global_comm.Get_size()
+
+    items_by_steps,items_to_skip = group_items_by_parallel_steps(session.items, n_workers)
+
+    for i, item in enumerate(session.items):
+      nextitem = session.items[i + 1] if i + 1 < len(session.items) else None
+      run_item_test(item, nextitem, session)
+    return True
+
+
+
+
+
+
+
 #def run_item_test(item, session):
 #  nextitem = None # not known at this point
 #  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)

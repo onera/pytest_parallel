@@ -5,26 +5,19 @@ from .mark import comm # seems unused, but used by pytest # TODO check
 
 from mpi4py import MPI
 
-from .mpi_reporter import sequential_scheduler#, static_scheduler, dynamic_scheduler
+from .mpi_reporter import sequential_scheduler, static_scheduler#, dynamic_scheduler
 
 #from .html_mpi     import HTMLReportMPI
 #from .junit_mpi    import LogXMLMPI
 #from _pytest.junitxml import xml_key
 
-#from .utils import prepare_subcomm_for_tests, filter_items, terminate_with_no_exception
+from .utils import spawn_master_process, is_master_process
 
 from _pytest.terminal import TerminalReporter
 
 def pytest_addoption(parser):
-  #parser.addoption('--report-file', dest='report_file', default=None)
   parser.addoption('--scheduler', dest='scheduler', type='choice', choices=['sequential','static','dynamic'], default='sequential')
 
-## --------------------------------------------------------------------------
-#@pytest.mark.trylast
-#def pytest_collection_modifyitems(config, items):
-#  prepare_subcomm_for_tests(items)
-#  items[:] = filter_items(items)
-#  print('len items = ',len(items))
 
 # --------------------------------------------------------------------------
 @pytest.mark.trylast
@@ -44,29 +37,10 @@ def pytest_configure(config):
 
   config.pluginmanager.register(plugin,'pytest_parallel')
 
-  ## 0. Open `report_file` if necessary
-  #report_file = config.getoption("report_file")
-
-  # TODO make `pytest_terminal_summary` do nothing on rank!=0 (hook with non-None result?)
-  if global_comm.Get_rank() == 0:
-  #parent_comm = global_comm.Get_parent();
-  #if parent_comm != MPI.COMM_NULL:
-    report_file = None
-  else:
-    report_file = f'pytest.{global_comm.Get_rank()}.log'
-
-  if isinstance(report_file, str):
-    try:
-      report_file = open(report_file,'w')
-    except Exception as e:
-      terminate_with_no_exception(str(e)) # TODO use Pytest terminate mecha
-
-  terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
-  config.pluginmanager.unregister(terminal_reporter)
-  terminal_reporter= TerminalReporter(config, report_file)
-  config.pluginmanager.register(terminal_reporter,'terminalreporter')
-
-  #config._report_file = report_file # keep a link here so we can close the file in `pytest_unconfigure`
+  # only report to terminal if master process
+  if not is_master_process(global_comm, scheduler):
+    terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
+    config.pluginmanager.unregister(terminal_reporter)
 
 
   ## --------------------------------------------------------------------------------
@@ -124,9 +98,6 @@ def pytest_configure(config):
 ## --------------------------------------------------------------------------
 #@pytest.mark.trylast
 #def pytest_unconfigure(config):
-#  if config._report_file is not None:
-#    config._report_file.close()
-#
 #  #html = getattr(config, "_html", None)
 #  #if html:
 #  #  del config._html

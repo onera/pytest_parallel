@@ -27,32 +27,6 @@ def add_n_procs(items):
   for item in items:
     item._n_mpi_proc = get_n_proc_for_test(item)
 
-def group_items_by_parallel_steps(items, n_workers):
-  add_n_procs(items)
-  items.sort(key=lambda item: item._n_mpi_proc, reverse=True)
-
-  remaining_n_procs_by_step = []
-  items_by_step = []
-  items_to_skip = []
-  for item in items:
-    if item._n_mpi_proc > n_workers[i]:
-      items_to_skip += [item]
-    else:
-      found_step = False
-      for i in range(len(remaining_n_procs_by_step)):
-        if item._n_mpi_proc <= remaining_n_procs_by_step[i]:
-          items_by_step[i] += [item]
-          remaining_n_procs_by_step[i] -= item._n_mpi_proc
-          found_step = True
-          break
-      if not found_step:
-        items_by_step += [[item]]
-        remaining_n_procs_by_step += [n_worker - item._n_mpi_proc]
-
-  return items_by_step, items_to_skip
-
-
-
 def mark_skip(item):
   comm   = MPI.COMM_WORLD
   n_rank = comm.Get_size()
@@ -120,13 +94,18 @@ def filter_items(items):
 
 
 
-def is_master_process(comm):
+def is_dyn_master_process(comm):
   parent_comm = comm.Get_parent();
   if parent_comm == MPI.COMM_NULL:
     return False
   else:
     return True
 
+def is_master_process(comm, scheduler):
+  if scheduler == 'dynamic':
+    return is_dyn_master_process(comm)
+  else:
+    return comm.Get_rank() == 0
 
 def spawn_master_process(global_comm):
     if is_master_process(global_comm):
