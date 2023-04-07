@@ -4,7 +4,7 @@ from mpi4py import MPI
 
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
-from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs#, filter_and_add_sub_comm, filter_items
+from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs
 
 #from more_itertools import partition
 import numpy as np
@@ -38,9 +38,6 @@ def gather_report(mpi_reports, n_sub_rank):
 
 
 class MPIReporter(object):
-  def __init__(self, global_comm):
-    self.global_comm = global_comm
-
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
     """
@@ -87,9 +84,8 @@ class MPIReporter(object):
 
       request.wait()
 
-  @pytest.mark.tryfirst
-  def pytest_runtest_logreport(self, report):
-    self._runtest_logreport(report)
+
+
 
 def filter_and_add_sub_comm(items, global_comm):
   i_rank    = global_comm.Get_rank()
@@ -121,16 +117,17 @@ def filter_and_add_sub_comm(items, global_comm):
   return filtered_items
 
 
-
-
-class sequential_scheduler(MPIReporter):
+class SequentialScheduler(MPIReporter):
   def __init__(self, global_comm):
-    MPIReporter.__init__(self, global_comm)
+    self.global_comm = global_comm
 
   @pytest.mark.trylast
   def pytest_collection_modifyitems(self, config, items):
     items[:] = filter_and_add_sub_comm(items, self.global_comm)
 
+  @pytest.mark.tryfirst
+  def pytest_runtest_logreport(self, report):
+    self._runtest_logreport(report)
 
 
 
@@ -186,17 +183,14 @@ def prepare_items_to_run(items, comm):
     comm_split = comm.Split(color)
 
     item._sub_comm = comm_split
+    item._master_running_proc = beg_next_rank
+    item._run_on_this_proc = True
 
-    if i_rank==0:
-      item._master_running_proc = beg_next_rank
-      if item._sub_comm == MPI.COMM_NULL:
-        # even for test not run on rank 0, the test must be seen by PyTest 
-        item._sub_comm = MPI.COMM_SELF
-        item._run_on_this_proc = False
-      else:
-        item._run_on_this_proc = True
-    else:
-      item._run_on_this_proc = True
+    # even for test not run on rank 0, the test must be seen by PyTest 
+    if i_rank==0 and item._sub_comm == MPI.COMM_NULL:
+      items_to_run += [item]    
+      item._sub_comm = MPI.COMM_SELF
+      item._run_on_this_proc = False
 
     beg_next_rank += n_proc_test
 
@@ -205,26 +199,26 @@ def prepare_items_to_run(items, comm):
 def items_to_run_on_this_proc(items_by_steps, items_to_skip, comm):
   i_rank = comm.Get_rank()
 
-  # keep skip items on rank 0
+  items = []
+
+  # on rank 0, mark items to skip because not enough procs
   if i_rank == 0:
     for item in items_to_skip:
-      item._sub_comm = MPI.COMM_SELF # TODO
-    items = items_to_skip
-  else:
-    items = []
+      item._sub_comm = MPI.COMM_SELF
+      item._master_running_proc = i_rank
+      item._run_on_this_proc = True
+      mark_skip(item)
+    items += items_to_skip
 
+  # distribute items that will really be run
   for items_of_step in items_by_steps:
     items += prepare_items_to_run(items_of_step, comm)
 
   return items
 
-
-
-  
-
-class static_scheduler(MPIReporter):
+class StaticScheduler(MPIReporter):
   def __init__(self, global_comm):
-    MPIReporter.__init__(self, global_comm)
+    self.global_comm = global_comm
 
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
@@ -248,13 +242,12 @@ class static_scheduler(MPIReporter):
     # master ranks of each sub_comm must send their report to rank 0
     if sub_comm.Get_rank() == 0:
       if self.global_comm.Get_rank() != 0:
-        sub_comm.send(report, dest=0)
+        self.global_comm.send(report, dest=0)
       elif report._master_running_proc != 0:
-        mpi_report = sub_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
+        mpi_report = self.global_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
 
         report.outcome  = mpi_report.outcome
         report.longrepr = mpi_report.longrepr
-
 
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
@@ -326,9 +319,9 @@ class static_scheduler(MPIReporter):
 #def item_with_biggest_admissible_n_proc(
 #  return = bisect_left(items_to_run, n_av_procs, key=lambda item: item._n_mpi_proc)
 #
-#class dynamic_scheduler(MPIReporter):
+#class DynamicScheduler(MPIReporter):
 #  def __init__(self, global_comm, inter_comm):
-#    MPIReporter.__init__(self, global_comm)
+#    self.global_comm = global_comm
 #    self.inter_comm = inter_comm
 #
 #  @pytest.mark.tryfirst

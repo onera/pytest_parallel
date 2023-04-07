@@ -25,54 +25,6 @@ def mark_skip(item):
   item.add_marker(pytest.mark.skip(reason=skip_msg, append=False))
 
 
-#def prepare_subcomm_for_tests(items):
-#  comm   = MPI.COMM_WORLD
-#  n_rank = comm.Get_size()
-#  i_rank = comm.Get_rank()
-#
-#  beg_next_rank = 0
-#  for item in items:
-#    n_proc_test = get_n_proc_for_test(item)
-#
-#    if n_proc_test > n_rank: # not enough procs: will be skipped
-#      if comm.Get_rank() == 0:
-#        item._sub_comm = MPI.COMM_SELF
-#      else:
-#        item._sub_comm = MPI.COMM_NULL
-#    else:
-#      if beg_next_rank + n_proc_test > n_rank:
-#        beg_next_rank = 0
-#
-#      if beg_next_rank <= i_rank and i_rank < beg_next_rank+n_proc_test :
-#        color = 1
-#      else:
-#        color = MPI.UNDEFINED
-#
-#      comm_split = comm.Split(color)
-#
-#      if comm_split != MPI.COMM_NULL:
-#        assert comm_split.Get_size() == n_proc_test
-#
-#      item._sub_comm = comm_split
-#      beg_next_rank += n_proc_test
-
-
-def filter_items(items):
-  comm   = MPI.COMM_WORLD
-  n_rank = comm.Get_size()
-
-  filtered_list = []
-  for item in items:
-    # keep the test on the current proc if the proc belongs to the test sub-comm
-    if item._sub_comm != MPI.COMM_NULL:
-      filtered_list.append(item)
-
-      # mark the test as `skip` if its required number of procs is too big 
-      # but keep the test on proc 0 so it is still reported as skip
-      if item._sub_comm == MPI.COMM_SELF:
-        mark_skip(item)
-
-  return filtered_list
 
 
 

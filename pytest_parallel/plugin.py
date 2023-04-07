@@ -5,15 +5,13 @@ from .mark import comm # seems unused, but used by pytest # TODO check
 
 from mpi4py import MPI
 
-from .mpi_reporter import sequential_scheduler, static_scheduler#, dynamic_scheduler
+from .mpi_reporter import SequentialScheduler, StaticScheduler#, DynamicScheduler
 
 #from .html_mpi     import HTMLReportMPI
 #from .junit_mpi    import LogXMLMPI
 #from _pytest.junitxml import xml_key
 
 from .utils import spawn_master_process, is_master_process
-
-from _pytest.terminal import TerminalReporter
 
 def pytest_addoption(parser):
   parser.addoption('--scheduler', dest='scheduler', type='choice', choices=['sequential','static','dynamic'], default='sequential')
@@ -26,14 +24,14 @@ def pytest_configure(config):
 
   scheduler = config.getoption('scheduler')
   if scheduler == 'sequential':
-    plugin = sequential_scheduler(global_comm)
+    plugin = SequentialScheduler(global_comm)
   elif scheduler == 'static':
-    plugin = static_scheduler(global_comm)
+    plugin = StaticScheduler(global_comm)
   elif scheduler == 'dynamic':
     inter_comm = spawn_master_process(global_comm)
-    plugin = dynamic_scheduler(global_comm, inter_comm)
+    plugin = DynamicScheduler(global_comm, inter_comm)
   else:
-    assert 0, 'pytest_configure: unknown scheduler' # TODO pytest error reporting
+    assert 0
 
   config.pluginmanager.register(plugin,'pytest_parallel')
 

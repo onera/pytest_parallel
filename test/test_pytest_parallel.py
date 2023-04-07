@@ -30,7 +30,7 @@ def ref_match(file):
   with open(output_path, 'r') as f:
     result = f.read()
 
-  return re.fullmatch(ref_regex, result)
+  return re.fullmatch(ref_regex, result, flags=re.DOTALL)
 
 def run_pytest_parallel_test(test_name, n_workers, scheduler, suffix=''):
   assert 'pytest_parallel.plugin' not in os.getenv('PYTEST_PLUGINS') # pytest_parallel MUST NOT be plugged in its testing framework environement
@@ -52,8 +52,8 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, suffix=''):
   assert ref_match(output_file_name)
 
 
-#@pytest.mark.parametrize('scheduler',['sequential','static'])
-@pytest.mark.parametrize('scheduler',['sequential'])
+@pytest.mark.parametrize('scheduler',['sequential','static'])
+#@pytest.mark.parametrize('scheduler',['static'])
 class TestPytestParallel:
   def test_00(self, scheduler): run_pytest_parallel_test('seq'                             , 1, scheduler)
   
@@ -88,16 +88,16 @@ class TestPytestParallel:
 
 
 
-#test = 'parametrize'
-#file = 'terminal_'+test
-#
-##refs_dir = Path('/scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/test/pytest_parallel_refs')
-##output_dir = Path('/scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/test/pytest_parallel_refs')
-#template_path = refs_dir/file
-#with open(template_path, 'r') as f:
-#  ref_regex = f.read()
-#output_path = output_dir/file
-#with open(output_path, 'r') as f:
-#  result = f.read()
-#
-#print(re.findall(ref_regex, result))
+test = 'parametrize'
+file = 'terminal_'+test
+
+#refs_dir = Path('/scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/test/pytest_parallel_refs')
+#output_dir = Path('/scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/test/pytest_parallel_refs')
+template_path = refs_dir/file
+with open(template_path, 'r') as f:
+  ref_regex = f.read()
+output_path = output_dir/file
+with open(output_path, 'r') as f:
+  result = f.read()
+
+print(re.findall(ref_regex, result, flags=re.DOTALL))
