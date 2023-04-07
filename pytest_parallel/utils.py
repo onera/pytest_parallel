@@ -4,18 +4,6 @@ from _pytest.nodes import Item
 from mpi4py import MPI
 
 
-def terminate_with_no_exception(error_msg):
-  """
-  Print an error message and terminates the program without launching an exception
-  PyTest does not support exceptions being thrown from virtually all `pytest_` hooks
-  """
-  import os
-  import sys
-
-  print(error_msg, file=sys.stderr)
-  os._exit(1)
-
-
 def get_n_proc_for_test(item: Item) -> int :
   try:
     return item.callspec.getparam('comm')

@@ -1,0 +1,38 @@
+^============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... collected 2 items                                                              
+
+[^\n]*test_two_fail_tests_one_proc.py::test_fail_1\[1\] FAILED
+[^\n]*test_two_fail_tests_one_proc.py::test_fail_2\[1\] FAILED
+
+=================================== FAILURES ===================================
+________________________________ test_fail_1\[1\] ________________________________
+
+-------------------------------- On rank 0 of 1 --------------------------------
+comm = <mpi4py.MPI.Intracomm object at [^\n]*>
+
+    @pytest_parallel.mark.parallel\(1\)
+    def test_fail_1\(comm\):
+>     assert 0
+E     assert 0
+
+[^\n]*test_two_fail_tests_one_proc.py:5: AssertionError
+________________________________ test_fail_2\[1\] ________________________________
+
+-------------------------------- On rank 0 of 1 --------------------------------
+comm = <mpi4py.MPI.Intracomm object at [^\n]*>
+
+    @pytest_parallel.mark.parallel\(1\)
+    def test_fail_2\(comm\):
+>     assert 0
+E     assert 0
+
+[^\n]*test_two_fail_tests_one_proc.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED [^\n]*test_two_fail_tests_one_proc.py::test_fail_1\[1\]
+FAILED [^\n]*test_two_fail_tests_one_proc.py::test_fail_2\[1\]
+============================== 2 failed in [^\n]* ===============================$

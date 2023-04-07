@@ -1,0 +1,25 @@
+^============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... collected 1 item                                                               
+
+[^\n]*test_success_0_fail_1.py::test_fail_one_rank\[2\] FAILED
+
+=================================== FAILURES ===================================
+____________________________ test_fail_one_rank\[2\] _____________________________
+
+-------------------------------- On rank 0 of 2 --------------------------------
+comm = <mpi4py.MPI.Intracomm object at [^\n]*>
+
+    @pytest_parallel.mark.parallel\(2\)
+    def test_fail_one_rank\(comm\):
+>     if comm.Get_rank\(\)==0: assert 0
+E     assert 0
+
+[^\n]*test_success_0_fail_1.py:5: AssertionError
+=========================== short test summary info ============================
+FAILED [^\n]*test_success_0_fail_1.py::test_fail_one_rank\[2\]
+============================== 1 failed in [^\n]*s ===============================

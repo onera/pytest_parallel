@@ -1,5 +1,5 @@
 def test_true():
-  assert True
+  assert 1
 
 def test_false():
-  assert False
+  assert 0

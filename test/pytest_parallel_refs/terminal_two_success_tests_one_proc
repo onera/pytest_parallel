@@ -1,0 +1,12 @@
+^============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... collected 2 items                                                              
+
+[^\n]*test_two_success_tests_one_proc.py::test_success_1\[1\] PASSED
+[^\n]*test_two_success_tests_one_proc.py::test_success_2\[1\] PASSED
+
+============================== 2 passed in [^\n]*s ===============================$

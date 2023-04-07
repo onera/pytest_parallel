@@ -4,14 +4,14 @@ from mpi4py import MPI
 
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
-from .utils import number_of_working_processes, get_n_proc_for_test#, filter_and_add_sub_comm, filter_items
+from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs#, filter_and_add_sub_comm, filter_items
 
 #from more_itertools import partition
 import numpy as np
 from bisect import bisect_left
 
-def gather_report(mpi_reports, sub_comm, global_comm):
-  assert len(mpi_reports) == sub_comm.Get_size()
+def gather_report(mpi_reports, n_sub_rank):
+  assert len(mpi_reports) == n_sub_rank
 
   report_init = mpi_reports[0]
   goutcome = report_init.outcome
@@ -19,14 +19,14 @@ def gather_report(mpi_reports, sub_comm, global_comm):
 
   collect_longrepr = []
   # > We need to rebuild a TestReport object, location can be false # TODO ?
-  for test_report in mpi_reports:
+  for i_sub_rank, test_report in enumerate(mpi_reports):
 
     if test_report.outcome == 'failed':
       goutcome = 'failed'
 
     if test_report.longrepr:
-      msg = f'On local [{sub_comm.Get_rank()}/{sub_comm.Get_size()}] | global [{global_comm.Get_rank()}/{global_comm.Get_size()}]'
-      full_msg = f'\n\n----------------------- {msg} ----------------------- \n\n'
+      msg = f'On rank {i_sub_rank} of {n_sub_rank}'
+      full_msg = f'\n-------------------------------- {msg} --------------------------------'
       fake_trace_back = ReprTraceback([ReprEntryNative(full_msg)], None, None)
       collect_longrepr.append((fake_trace_back     , ReprFileLocation(*report_init.location), None))
       collect_longrepr.append((test_report.longrepr, ReprFileLocation(*report_init.location), None))
@@ -41,51 +41,55 @@ class MPIReporter(object):
   def __init__(self, global_comm):
     self.global_comm = global_comm
 
-
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
     """
       Need to hook to pass the test sub-comm to `pytest_runtest_logreport`,
       and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
     """
-    outcome = yield
-    report = outcome.get_result()
+    result = yield
+    report = result.get_result()
     report._sub_comm = item._sub_comm
 
-  @pytest.mark.tryfirst
-  def pytest_runtest_logreport(self, report):
+  def _runtest_logreport(self, report):
     """
+      Gather reports from all procs participating in the test on rank 0 of the sub_comm
     """
     sub_comm = report._sub_comm
     del report._sub_comm # No need to keep it in the report
                          # Furthermore we need to serialize the report
                          # and mpi4py does not know how to serialize report._sub_comm
+    i_sub_rank = sub_comm.Get_rank()
+    n_sub_rank = sub_comm.Get_size()
 
     if report.outcome != 'skipped': # Skipped test are only known by proc 0 -> no merge required
       # Warning: PyTest reports can actually be quite big
-      request = sub_comm.isend(report, dest=0, tag=sub_comm.Get_rank())
+      request = sub_comm.isend(report, dest=0, tag=i_sub_rank)
 
-      if sub_comm.Get_rank() == 0:
-        mpi_reports = sub_comm.Get_size() * [None]
-        for _ in range(sub_comm.Get_size()):
+      if i_sub_rank == 0:
+        mpi_reports = n_sub_rank * [None]
+        for _ in range(n_sub_rank):
           status = MPI.Status()
 
           mpi_report = sub_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
           mpi_reports[status.Get_source()] = mpi_report
 
         assert None not in mpi_reports # should have received from all ranks of `sub_comm`
-        goutcome, glongrepr = gather_report(mpi_reports, sub_comm, self.global_comm)
+        goutcome, glongrepr = gather_report(mpi_reports, n_sub_rank)
 
         # report.location = report_gather.location# TODO
-        #report.outcome  = goutcome
+        report.outcome  = goutcome
         report.longrepr = glongrepr
-        #report.longrepr = 50*str(self.global_comm.Get_rank())
-      else:
-        # report.location = # TODO
-        # report.outcome  = # TODO gather from 0
-        report.longrepr = None
+      #else:
+      #  # report.location = # TODO
+      #  # report.outcome  = # TODO gather from 0
+      #  report.longrepr = None
 
       request.wait()
+
+  @pytest.mark.tryfirst
+  def pytest_runtest_logreport(self, report):
+    self._runtest_logreport(report)
 
 def filter_and_add_sub_comm(items, global_comm):
   i_rank    = global_comm.Get_rank()
@@ -96,8 +100,9 @@ def filter_and_add_sub_comm(items, global_comm):
     n_proc_test = get_n_proc_for_test(item)
 
     if n_proc_test > n_workers: # not enough procs: will be skipped
-      if comm.Get_rank() == 0:
+      if global_comm.Get_rank() == 0:
         item._sub_comm = MPI.COMM_SELF
+        mark_skip(item)
         filtered_items += [item]
       else:
         item._sub_comm = MPI.COMM_NULL
@@ -114,8 +119,6 @@ def filter_and_add_sub_comm(items, global_comm):
         filtered_items += [item]
 
   return filtered_items
-
-
 
 
 
@@ -141,7 +144,7 @@ def group_items_by_parallel_steps(items, n_workers):
   items_by_step = []
   items_to_skip = []
   for item in items:
-    if item._n_mpi_proc > n_workers[i]:
+    if item._n_mpi_proc > n_workers:
       items_to_skip += [item]
     else:
       found_step = False
@@ -153,10 +156,9 @@ def group_items_by_parallel_steps(items, n_workers):
           break
       if not found_step:
         items_by_step += [[item]]
-        remaining_n_procs_by_step += [n_worker - item._n_mpi_proc]
+        remaining_n_procs_by_step += [n_workers - item._n_mpi_proc]
 
   return items_by_step, items_to_skip
-
 
 def run_item_test(item, nextitem, session):
   item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
@@ -165,11 +167,94 @@ def run_item_test(item, nextitem, session):
   if session.shouldstop:
       raise session.Interrupted(session.shouldstop)
 
+def prepare_items_to_run(items, comm):
+  n_rank = comm.Get_size()
+  i_rank = comm.Get_rank()
+
+  items_to_run = [] 
+
+  beg_next_rank = 0
+  for item in items:
+    n_proc_test = get_n_proc_for_test(item)
+
+    if beg_next_rank <= i_rank and i_rank < beg_next_rank+n_proc_test :
+      color = 1
+      items_to_run += [item]    
+    else:
+      color = MPI.UNDEFINED
+
+    comm_split = comm.Split(color)
+
+    item._sub_comm = comm_split
+
+    if i_rank==0:
+      item._master_running_proc = beg_next_rank
+      if item._sub_comm == MPI.COMM_NULL:
+        # even for test not run on rank 0, the test must be seen by PyTest 
+        item._sub_comm = MPI.COMM_SELF
+        item._run_on_this_proc = False
+      else:
+        item._run_on_this_proc = True
+    else:
+      item._run_on_this_proc = True
+
+    beg_next_rank += n_proc_test
+
+  return items_to_run
+
+def items_to_run_on_this_proc(items_by_steps, items_to_skip, comm):
+  i_rank = comm.Get_rank()
+
+  # keep skip items on rank 0
+  if i_rank == 0:
+    for item in items_to_skip:
+      item._sub_comm = MPI.COMM_SELF # TODO
+    items = items_to_skip
+  else:
+    items = []
+
+  for items_of_step in items_by_steps:
+    items += prepare_items_to_run(items_of_step, comm)
+
+  return items
+
+
+
+  
 
 class static_scheduler(MPIReporter):
   def __init__(self, global_comm):
     MPIReporter.__init__(self, global_comm)
-    print('\n\nstatic_scheduler\n\n')
+
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_makereport(self, item):
+    """
+      Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
+      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+      Also, tf test is not run on this proc, mark the outcome accordingly
+    """
+    result = yield
+    report = result.get_result()
+    report._sub_comm = item._sub_comm
+    report._master_running_proc = item._master_running_proc
+    if not item._run_on_this_proc:
+      report.outcome = 'not_run_on_this_proc'
+
+  @pytest.mark.tryfirst
+  def pytest_runtest_logreport(self, report):
+    sub_comm = report._sub_comm
+    self._runtest_logreport(report)
+
+    # master ranks of each sub_comm must send their report to rank 0
+    if sub_comm.Get_rank() == 0:
+      if self.global_comm.Get_rank() != 0:
+        sub_comm.send(report, dest=0)
+      elif report._master_running_proc != 0:
+        mpi_report = sub_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
+
+        report.outcome  = mpi_report.outcome
+        report.longrepr = mpi_report.longrepr
+
 
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
@@ -184,10 +269,12 @@ class static_scheduler(MPIReporter):
 
     n_workers = self.global_comm.Get_size()
 
-    items_by_steps,items_to_skip = group_items_by_parallel_steps(session.items, n_workers)
+    items_by_steps, items_to_skip = group_items_by_parallel_steps(session.items, n_workers)
 
-    for i, item in enumerate(session.items):
-      nextitem = session.items[i + 1] if i + 1 < len(session.items) else None
+    items = items_to_run_on_this_proc(items_by_steps, items_to_skip, self.global_comm)
+
+    for i, item in enumerate(items):
+      nextitem = items[i + 1] if i + 1 < len(items) else None
       run_item_test(item, nextitem, session)
     return True
 
@@ -243,7 +330,6 @@ class static_scheduler(MPIReporter):
 #  def __init__(self, global_comm, inter_comm):
 #    MPIReporter.__init__(self, global_comm)
 #    self.inter_comm = inter_comm
-#    print('\n\ndynamic_scheduler\n\n')
 #
 #  @pytest.mark.tryfirst
 #  def pytest_runtestloop(self, session) -> bool:

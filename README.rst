@@ -30,7 +30,10 @@ Features
 
 1. Cloisonner c'est très bien => on fait ça pour la base de test sonics
   Mais c'est lourd => pas pour Maia
-2. il existe un mécanisme de "fault handler" qui peut permettre de gérer les segfault par autre chose que par un crash -> à investiguer
+2. Erreurs compliquées (segfault, double free, mpi error)
+    -> Il existe un mécanisme de "fault handler" qui peut permettre de gérer les segfault par autre chose que par un crash -> à investiguer
+         https://docs.pytest.org/en/7.1.x/how-to/failures.html#faulthandler
+    -> Sanitizer
 3. Pour PyTest il nous faut sans doute plusieurs schedulers en fait :
   1. au moins un pseudo-seq facile à débugger => c'est le plus important
   2. un statique (celui actuel) 
