@@ -8,6 +8,16 @@ from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, 
 from .algo import partition, upper_bound
 import numpy as np
 
+def print_mpi(inter_comm, *args):
+  red     = "\u001b[31m"
+  blue    = "\u001b[34m"
+  reset   = "\u001b[0m"
+  if is_dyn_master_process(inter_comm):
+    prefix = red
+  else:
+    prefix = blue
+  print(prefix,*args,reset)
+
 def gather_report(mpi_reports, n_sub_rank):
   assert len(mpi_reports) == n_sub_rank
 
@@ -230,7 +240,7 @@ class StaticScheduler(MPIReporter):
     report._sub_comm = item._sub_comm
     report._master_running_proc = item._master_running_proc
     if not item._run_on_this_proc:
-      report.outcome = 'not_run_on_this_proc'
+      report.outcome = 'not_run_on_this_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
@@ -315,15 +325,24 @@ def schedule_test(item, available_procs, inter_comm):
     i += 1
 
   item._sub_ranks = sub_ranks
+  print_mpi(inter_comm,'sub_ranks = ',sub_ranks)
+
+  # the procs are busy
+  for sub_rank in sub_ranks:
+    available_procs[sub_rank] = False
 
   # TODO isend would be slightly better (less waiting)
+  print_mpi(inter_comm,'schedule_test before send')
   for sub_rank in sub_ranks:
     inter_comm.send((original_idx,sub_ranks), dest=sub_rank, tag=SCHEDULED_WORK_TAG)
+  print_mpi(inter_comm,'schedule_test after send')
 
 def wait_test_to_complete(items_to_run, available_procs, inter_comm):
   # receive from any proc
   status = MPI.Status()
+  print_mpi(inter_comm,'wait_test_to_complete before recv')
   original_idx = inter_comm.recv(source=MPI.ANY_SOURCE, tag=WORK_DONE_TAG)
+  print_mpi(inter_comm,'wait_test_to_complete after recv')
   first_rank_done = status.Get_source()
 
   # get associated item
@@ -343,17 +362,21 @@ def wait_test_to_complete(items_to_run, available_procs, inter_comm):
     available_procs[sub_rank] = True
 
   # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+  print_mpi(inter_comm,'wait_test_to_complete before run')
   run_item_test(item, nextitem, session)
+  print_mpi(inter_comm,'wait_test_to_complete after run')
 
 def wait_last_tests_to_complete(items_to_run, available_procs, inter_comm):
   while np.sum(available_procs) < len(available_procs):
-    wait_test_to_complete(items_to_run, available_procs)
+    wait_test_to_complete(items_to_run, available_procs, inter_comm)
 
 
 ####### Client #######
 def receive_run_and_report_tests(items_to_run, session, global_comm, inter_comm):
   # receive
+  print_mpi(inter_comm,'receive_run_and_report_tests before recv')
   original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
+  print_mpi(inter_comm,'receive_run_and_report_tests after recv')
 
   # run
   sub_comm = sub_comm_from_ranks(global_comm, sub_ranks)
@@ -362,7 +385,9 @@ def receive_run_and_report_tests(items_to_run, session, global_comm, inter_comm)
   nextitem = None # not known at this point
   run_item_test(item, nextitem, session)
 
+  print_mpi(inter_comm,'receive_run_and_report_tests before send')
   inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
+  print_mpi(inter_comm,'receive_run_and_report_tests after send')
 
 
 class DynamicScheduler(MPIReporter):
@@ -381,6 +406,8 @@ class DynamicScheduler(MPIReporter):
 
     if session.config.option.collectonly:
       return True
+
+    print_mpi(self.inter_comm,'\nBegin loop')
 
   # parallel algo begin
     n_workers = number_of_working_processes(self.inter_comm)
@@ -422,10 +449,7 @@ class DynamicScheduler(MPIReporter):
       wait_last_tests_to_complete(items_to_run, available_procs, self.inter_comm)
     else: # worker proc
       receive_run_and_report_tests(items_to_run, session, self.global_comm, self.inter_comm)
-
-  #@pytest.mark.tryfirst
-  #def pytest_runtest_logreport(self, report):
-  #  self._runtest_logreport(report)
+    print_mpi(self.inter_comm,'\nEnd loop')
 
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
@@ -437,27 +461,28 @@ class DynamicScheduler(MPIReporter):
     result = yield
     report = result.get_result()
     if is_dyn_master_process(self.inter_comm):
-      print('\nis_dyn_master_process\n')
+      print_mpi(self.inter_comm,'    is_dyn_master_process')
       report._master_running_proc = item._sub_ranks[0]
-      report.outcome = 'only_fake_run_on_master_proc'
+      report.outcome = 'only_fake_run_on_master_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
     else:
-      print('\nNOT is_dyn_master_process\n')
+      print_mpi(self.inter_comm,'    NOT is_dyn_master_process')
       report._sub_comm = item._sub_comm
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
-    self._runtest_logreport(report)
+    pass
+    #self._runtest_logreport(report)
 
-    assert report.when == 'setup' or report.when == 'call' or report.when == 'teardown' # only know tags
-    tag = WHEN_TAGS[report.when]
+    #assert report.when == 'setup' or report.when == 'call' or report.when == 'teardown' # only know tags
+    #tag = WHEN_TAGS[report.when]
 
-    # master ranks of each sub_comm must send their report to rank 0
-    if not is_dyn_master_process(self.inter_comm):
-      sub_comm = report._sub_comm
-      if sub_comm.Get_rank() == 0: # if local master proc, send
-        self.inter_comm.send(report, dest=0, tag=tag)
-    else: # global master: receive
-      mpi_report = self.inter_comm.recv(source=report._master_running_proc, tag=tag)
+    ## master ranks of each sub_comm must send their report to rank 0
+    #if not is_dyn_master_process(self.inter_comm):
+    #  sub_comm = report._sub_comm
+    #  if sub_comm.Get_rank() == 0: # if local master proc, send
+    #    self.inter_comm.send(report, dest=0, tag=tag)
+    #else: # global master: receive
+    #  mpi_report = self.inter_comm.recv(source=report._master_running_proc, tag=tag)
 
-      report.outcome  = mpi_report.outcome
-      report.longrepr = mpi_report.longrepr
+    #  report.outcome  = mpi_report.outcome
+    #  report.longrepr = mpi_report.longrepr
