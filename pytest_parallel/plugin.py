@@ -5,7 +5,7 @@ from .mark import comm # seems unused, but used by pytest # TODO check
 
 from mpi4py import MPI
 
-from .mpi_reporter import SequentialScheduler, StaticScheduler#, DynamicScheduler
+from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
 
 #from .html_mpi     import HTMLReportMPI
 #from .junit_mpi    import LogXMLMPI

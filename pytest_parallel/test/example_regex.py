@@ -2,12 +2,12 @@ import re
 
 regex = '(?=.*A\n)(?=.*B\n).*'
 
-results = [
+strings = [
   'A\n B\n',
   'B\n A\n',
   'A\n',
 ]
-for result in results:
-  print(repr(result))
-  print(re.findall(regex, result,flags=re.DOTALL))
+for s in strings:
+  print(repr(s))
+  print(re.findall(regex, s, flags=re.DOTALL))
   print('\n')

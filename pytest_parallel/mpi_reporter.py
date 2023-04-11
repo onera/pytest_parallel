@@ -4,11 +4,9 @@ from mpi4py import MPI
 
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
-from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs
-
-#from more_itertools import partition
+from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs, is_dyn_master_process
+from .algo import partition, upper_bound
 import numpy as np
-from bisect import bisect_left
 
 def gather_report(mpi_reports, n_sub_rank):
   assert len(mpi_reports) == n_sub_rank
@@ -168,7 +166,7 @@ def prepare_items_to_run(items, comm):
   n_rank = comm.Get_size()
   i_rank = comm.Get_rank()
 
-  items_to_run = [] 
+  items_to_run = []
 
   beg_next_rank = 0
   for item in items:
@@ -176,7 +174,7 @@ def prepare_items_to_run(items, comm):
 
     if beg_next_rank <= i_rank and i_rank < beg_next_rank+n_proc_test :
       color = 1
-      items_to_run += [item]    
+      items_to_run += [item]
     else:
       color = MPI.UNDEFINED
 
@@ -186,9 +184,9 @@ def prepare_items_to_run(items, comm):
     item._master_running_proc = beg_next_rank
     item._run_on_this_proc = True
 
-    # even for test not run on rank 0, the test must be seen by PyTest 
+    # even for test not run on rank 0, the test must be seen by PyTest
     if i_rank==0 and item._sub_comm == MPI.COMM_NULL:
-      items_to_run += [item]    
+      items_to_run += [item]
       item._sub_comm = MPI.COMM_SELF
       item._run_on_this_proc = False
 
@@ -240,10 +238,10 @@ class StaticScheduler(MPIReporter):
     self._runtest_logreport(report)
 
     # master ranks of each sub_comm must send their report to rank 0
-    if sub_comm.Get_rank() == 0:
-      if self.global_comm.Get_rank() != 0:
+    if sub_comm.Get_rank() == 0: # only master are concerned
+      if self.global_comm.Get_rank() != 0: # if master is not global master, recv
         self.global_comm.send(report, dest=0)
-      elif report._master_running_proc != 0:
+      elif report._master_running_proc != 0: # else, recv if test run remotely
         mpi_report = self.global_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
 
         report.outcome  = mpi_report.outcome
@@ -277,92 +275,189 @@ class StaticScheduler(MPIReporter):
 
 
 
-#def run_item_test(item, session):
-#  nextitem = None # not known at this point
-#  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
-#  if session.shouldfail:
-#    raise session.Failed(session.shouldfail)
-#  if session.shouldstop:
-#    raise session.Interrupted(session.shouldstop)
-#
-#
-#def sub_comm_from_ranks(global_comm, sub_ranks):
-#  group = global_comm.group()
-#  sub_group = group.Incl(sub_ranks)
-#  sub_comm = global_comm.Create_group(sub_group)
-#  return sub_comm
-#
-## TODO bisect_left with key arg only available in Python 3.10
-#def bisect_left(a, x, lo=0, hi=None, *, key=None):
-#    if lo < 0:
-#        raise ValueError('lo must be non-negative')
-#    if hi is None:
-#        hi = len(a)
-#    # Note, the comparison uses "<" to match the
-#    # __lt__() logic in list.sort() and in heapq.
-#    if key is None:
-#        while lo < hi:
-#            mid = (lo + hi) // 2
-#            if a[mid] < x:
-#                lo = mid + 1
-#            else:
-#                hi = mid
-#    else:
-#        while lo < hi:
-#            mid = (lo + hi) // 2
-#            if key(a[mid]) < x:
-#                lo = mid + 1
-#            else:
-#                hi = mid
-#    return lo
-#
-#def item_with_biggest_admissible_n_proc(
-#  return = bisect_left(items_to_run, n_av_procs, key=lambda item: item._n_mpi_proc)
-#
-#class DynamicScheduler(MPIReporter):
-#  def __init__(self, global_comm, inter_comm):
-#    self.global_comm = global_comm
-#    self.inter_comm = inter_comm
-#
-#  @pytest.mark.tryfirst
-#  def pytest_runtestloop(self, session) -> bool:
-#    if session.testsfailed and not session.config.option.continue_on_collection_errors:
-#      raise session.Interrupted(
-#        "%d error%s during collection"
-#        % (session.testsfailed, "s" if session.testsfailed != 1 else "")
-#      )
-#
-#    if session.config.option.collectonly:
-#      return True
-#
-#  # parallel algo begin
-#    n_workers = number_of_working_processes(comm)
-#
-#    # add proc to items
-#    add_n_procs(session.items)
-#
-#    # isolate skips
-#    has_enough_procs = lambda item: item._n_mpi_proc <= n_workers
-#    items_to_skip, items_to_run = partition(has_enough_procs, session.items)
-#
-#    # mark and run skip
-#    for item in items_to_skip:
-#      mark_skip(item)
-#      run_item_test(item, session)
-#
-#    items_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)
-#    available_procs = np.ones(n_workers, dtype=np.int8)
-#
-#    while len(items_to_run) > 0:
-#      n_av_procs = np.sum(available_procs)
-#
-#      item = item_with_biggest_admissible_n_proc(items_to_run, n_av_procs)
-#
-#      
-#
-#
-#    sub_comm_from_ranks(global_comm, sub_ranks)
-#
-#    for item in items:
-#      run_item_test(item, session)
-#    return True
+def sub_comm_from_ranks(global_comm, sub_ranks):
+  group = global_comm.group
+  sub_group = group.Incl(sub_ranks)
+  sub_comm = global_comm.Create_group(sub_group)
+  return sub_comm
+
+
+def item_with_biggest_admissible_n_proc(items, n_av_procs):
+  key = lambda item: item._n_mpi_proc
+  # Preconditions:
+  #   sorted(items, key)
+  #   len(items)>0
+
+  idx = upper_bound(items, n_av_procs, key)
+  return idx-1 # return the one just before asking too much (-1 if all ask too much)
+
+def mark_original_index(items):
+  for i, item in enumerate(items):
+    item._original_index = i
+
+########### Client/Server ###########
+SCHEDULED_WORK_TAG = 0
+WORK_DONE_TAG = 1
+REPORT_SETUP_TAG = 2
+REPORT_RUN_TAG = 3
+REPORT_TEARDOWN_TAG = 4
+WHEN_TAGS = {'setup':REPORT_SETUP_TAG, 'call':REPORT_RUN_TAG, 'teardown':REPORT_TEARDOWN_TAG}
+####### Server #######
+def schedule_test(item, available_procs, inter_comm):
+  n_procs = item._n_mpi_proc
+  original_idx = item._original_index
+
+  sub_ranks = [] 
+  i = 0
+  while len(sub_ranks) < n_procs:
+    if available_procs[i]:
+      sub_ranks.append(i)
+    i += 1
+
+  item._sub_ranks = sub_ranks
+
+  # TODO isend would be slightly better (less waiting)
+  for sub_rank in sub_ranks:
+    inter_comm.send((original_idx,sub_ranks), dest=sub_rank, tag=SCHEDULED_WORK_TAG)
+
+def wait_test_to_complete(items_to_run, available_procs, inter_comm):
+  # receive from any proc
+  status = MPI.Status()
+  original_idx = inter_comm.recv(source=MPI.ANY_SOURCE, tag=WORK_DONE_TAG)
+  first_rank_done = status.Get_source()
+
+  # get associated item
+  item = items_to_run[original_idx]
+  n_proc = item._n_mpi_proc
+  sub_ranks = item._sub_ranks
+  assert first_rank_done in sub_ranks
+
+  # receive done message from all other proc associated to the item
+  for sub_rank in sub_ranks:
+    if sub_rank != first_rank_done:
+      rank_original_idx = inter_comm.recv(source=sub_rank, tag=WORK_DONE_TAG)
+      assert rank_original_idx == original_idx # sub_rank is supposed to have worked on the same test
+
+  # the procs are now available
+  for sub_rank in sub_ranks:
+    available_procs[sub_rank] = True
+
+  # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+  run_item_test(item, nextitem, session)
+
+def wait_last_tests_to_complete(items_to_run, available_procs, inter_comm):
+  while np.sum(available_procs) < len(available_procs):
+    wait_test_to_complete(items_to_run, available_procs)
+
+
+####### Client #######
+def receive_run_and_report_tests(items_to_run, session, global_comm, inter_comm):
+  # receive
+  original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
+
+  # run
+  sub_comm = sub_comm_from_ranks(global_comm, sub_ranks)
+  item = items_to_run[original_idx]
+  item._sub_comm = sub_comm
+  nextitem = None # not known at this point
+  run_item_test(item, nextitem, session)
+
+  inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
+
+
+class DynamicScheduler(MPIReporter):
+  def __init__(self, global_comm, inter_comm):
+    self.global_comm = global_comm
+    self.inter_comm = inter_comm
+
+  @pytest.mark.tryfirst
+  def pytest_runtestloop(self, session) -> bool:
+  # same begining as PyTest default's
+    if session.testsfailed and not session.config.option.continue_on_collection_errors:
+      raise session.Interrupted(
+        "%d error%s during collection"
+        % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+      )
+
+    if session.config.option.collectonly:
+      return True
+
+  # parallel algo begin
+    n_workers = number_of_working_processes(self.inter_comm)
+
+    # add proc to items
+    add_n_procs(session.items)
+
+    # isolate skips
+    has_enough_procs = lambda item: item._n_mpi_proc <= n_workers
+    items_to_run, items_to_skip = partition(session.items, has_enough_procs)
+
+    if is_dyn_master_process(self.inter_comm):
+      # mark and run skipped tests
+      for i, item in enumerate(items_to_skip):
+        mark_skip(item)
+        nextitem = items_to_skip[i + 1] if i + 1 < len(items_to_skip) else None
+        run_item_test(item, nextitem, session)
+
+      # schedule tests to run
+
+      ## once tests are run, they will be erased from the list on the master proc
+      ## however, we need to keep the original position to send to the other procs
+      items_left_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)
+      mark_original_index(items_left_to_run)
+
+      available_procs = np.ones(n_workers, dtype=np.int8)
+
+      while len(items_left_to_run) > 0:
+        n_av_procs = np.sum(available_procs)
+
+        item_idx = item_with_biggest_admissible_n_proc(items_left_to_run, n_av_procs)
+
+        if item_idx == -1:
+          wait_test_to_complete(items_to_run, available_procs, self.inter_comm)
+        else:
+          schedule_test(items_left_to_run[item_idx], available_procs, self.inter_comm)
+          del items_left_to_run[item_idx]
+
+      wait_last_tests_to_complete(items_to_run, available_procs, self.inter_comm)
+    else: # worker proc
+      receive_run_and_report_tests(items_to_run, session, self.global_comm, self.inter_comm)
+
+  #@pytest.mark.tryfirst
+  #def pytest_runtest_logreport(self, report):
+  #  self._runtest_logreport(report)
+
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_makereport(self, item):
+    """
+      Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
+      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+      Also, tf test is not run on this proc, mark the outcome accordingly
+    """
+    result = yield
+    report = result.get_result()
+    if is_dyn_master_process(self.inter_comm):
+      print('\nis_dyn_master_process\n')
+      report._master_running_proc = item._sub_ranks[0]
+      report.outcome = 'only_fake_run_on_master_proc'
+    else:
+      print('\nNOT is_dyn_master_process\n')
+      report._sub_comm = item._sub_comm
+
+  @pytest.mark.tryfirst
+  def pytest_runtest_logreport(self, report):
+    self._runtest_logreport(report)
+
+    assert report.when == 'setup' or report.when == 'call' or report.when == 'teardown' # only know tags
+    tag = WHEN_TAGS[report.when]
+
+    # master ranks of each sub_comm must send their report to rank 0
+    if not is_dyn_master_process(self.inter_comm):
+      sub_comm = report._sub_comm
+      if sub_comm.Get_rank() == 0: # if local master proc, send
+        self.inter_comm.send(report, dest=0, tag=tag)
+    else: # global master: receive
+      mpi_report = self.inter_comm.recv(source=report._master_running_proc, tag=tag)
+
+      report.outcome  = mpi_report.outcome
+      report.longrepr = mpi_report.longrepr

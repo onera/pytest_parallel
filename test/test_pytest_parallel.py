@@ -8,11 +8,14 @@
   the testing framework (this file!) MUST DISABLE pytest_parallel when we run its tests
   (but of course its tests will in turn run tests with pytest_parallel enabled)
 """
+import os
+assert 'pytest_parallel.plugin' not in os.getenv('PYTEST_PLUGINS') # pytest_parallel MUST NOT be plugged in its testing framework environement
+                                                                   # it will be plugged in by the framework when needed
+
 import re
 import pytest
 from pathlib import Path
 import subprocess
-import os
 
 root_dir = Path(__file__).parent
 tests_dir  = root_dir/'pytest_parallel_tests'
