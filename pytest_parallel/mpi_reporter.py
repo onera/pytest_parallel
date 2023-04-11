@@ -18,7 +18,7 @@ def print_mpi2(inter_comm, *args):
     prefix = red
   else:
     prefix = blue
-  print(prefix,*args,reset)
+  #print(prefix,*args,reset)
 def print_mpi(inter_comm, *args):
   red     = "\u001b[31m"
   blue    = "\u001b[34m"
@@ -94,15 +94,12 @@ class MPIReporter(object):
         assert None not in mpi_reports # should have received from all ranks of `sub_comm`
         goutcome, glongrepr = gather_report(mpi_reports, n_sub_rank)
 
-        # report.location = report_gather.location# TODO
         report.outcome  = goutcome
         report.longrepr = glongrepr
-      #else:
-      #  # report.location = # TODO
-      #  # report.outcome  = # TODO gather from 0
-      #  report.longrepr = None
 
       request.wait()
+
+    sub_comm.barrier()
 
 
 
@@ -148,6 +145,15 @@ class SequentialScheduler(MPIReporter):
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     self._runtest_logreport(report)
+
+  @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+  def pytest_runtestloop(self, session) -> bool:
+    outcome = yield
+
+    # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
+    if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
+      session.testscollected = 1
+    return True
 
 
 
@@ -291,6 +297,10 @@ class StaticScheduler(MPIReporter):
     for i, item in enumerate(items):
       nextitem = items[i + 1] if i + 1 < len(items) else None
       run_item_test(item, nextitem, session)
+
+    # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
+    if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
+      session.testscollected = 1
     return True
 
 
@@ -330,8 +340,9 @@ WHEN_TAGS = {'setup':REPORT_SETUP_TAG, 'call':REPORT_RUN_TAG, 'teardown':REPORT_
 def schedule_test(item, available_procs, inter_comm):
   n_procs = item._n_mpi_proc
   original_idx = item._original_index
+  print_mpi2(inter_comm,'schedule_test | item = ',item,', original_idx = ',original_idx)
 
-  sub_ranks = [] 
+  sub_ranks = []
   i = 0
   while len(sub_ranks) < n_procs:
     if available_procs[i]:
@@ -366,8 +377,12 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
   # get associated item
   item = items_to_run[original_idx]
+  print_mpi2(inter_comm,'wait_test_to_complete | len(items_to_run) = ',len(items_to_run))
+  print_mpi2(inter_comm,'wait_test_to_complete | items_to_run = ',items_to_run)
+  print_mpi2(inter_comm,'wait_test_to_complete | item = ',item,', original_idx = ',original_idx, ' item._original_index = ', item._original_index)
   n_proc = item._n_mpi_proc
   sub_ranks = item._sub_ranks
+  #print_mpi2(inter_comm,'wait_test_to_complete after sub_ranks')
   print_mpi(inter_comm,'first_rank_done = ',first_rank_done)
   print_mpi(inter_comm,'sub_ranks = ',sub_ranks)
   assert first_rank_done in sub_ranks
@@ -417,7 +432,7 @@ def receive_run_and_report_tests(items_to_run, session, current_item_requests, g
 
     MPI.Request.waitall(current_item_requests) # make sure all report isends have been received
     current_item_requests.clear()
-  
+
 
 
 
@@ -450,6 +465,7 @@ class DynamicScheduler(MPIReporter):
     # isolate skips
     has_enough_procs = lambda item: item._n_mpi_proc <= n_workers
     items_to_run, items_to_skip = partition(session.items, has_enough_procs)
+    mark_original_index(items_to_run)
 
     if is_dyn_master_process(self.inter_comm):
       # mark and run skipped tests
@@ -464,11 +480,11 @@ class DynamicScheduler(MPIReporter):
       ## once tests are run, they will be erased from the list on the master proc
       ## however, we need to keep the original position to send to the other procs
       items_left_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)
-      mark_original_index(items_left_to_run)
 
       available_procs = np.ones(n_workers, dtype=np.int8)
 
       while len(items_left_to_run) > 0:
+        print_mpi2(self.inter_comm,'runtest loop | len(items_left_to_run)= ',len(items_left_to_run))
         n_av_procs = np.sum(available_procs)
 
         item_idx = item_with_biggest_admissible_n_proc(items_left_to_run, n_av_procs)
@@ -476,6 +492,7 @@ class DynamicScheduler(MPIReporter):
         if item_idx == -1:
           wait_test_to_complete(items_to_run, session, available_procs, self.inter_comm)
         else:
+          print_mpi2(self.inter_comm,'runtest loop | item = ',items_left_to_run[item_idx],', item_idx = ',item_idx)
           schedule_test(items_left_to_run[item_idx], available_procs, self.inter_comm)
           del items_left_to_run[item_idx]
 

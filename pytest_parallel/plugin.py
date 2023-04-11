@@ -93,9 +93,13 @@ def pytest_configure(config):
   #    config.pluginmanager.register(config._store[xml_key])
   ## --------------------------------------------------------------------------------
 
-## --------------------------------------------------------------------------
-#@pytest.mark.trylast
+### --------------------------------------------------------------------------
+#@pytest.hookimpl(hookwrapper=True, tryfirst=True)
 #def pytest_unconfigure(config):
+#  print('START plugin pytest_unconfigure')
+#  outcome = yield
+#  print('END plugin pytest_unconfigure')
+#
 #  #html = getattr(config, "_html", None)
 #  #if html:
 #  #  del config._html
@@ -105,9 +109,9 @@ def pytest_configure(config):
 #  #if xml:
 #  #    del config._store[xml_key]
 #  #    config.pluginmanager.unregister(xml)
-#
+
 #@pytest.hookimpl(hookwrapper=True, tryfirst=True)
 #def pytest_sessionfinish(session):
-#  print('START plugin pytest_sessionfinish')
+#  #print('START plugin pytest_sessionfinish')
 #  outcome = yield
-#  print('END plugin pytest_sessionfinish')
+#  #print('END plugin pytest_sessionfinish')

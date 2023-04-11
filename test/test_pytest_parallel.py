@@ -57,34 +57,35 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, suffix=''):
 
 
 #@pytest.mark.parametrize('scheduler',['sequential','static'])
+#@pytest.mark.parametrize('scheduler',['sequential'])
 @pytest.mark.parametrize('scheduler',['dynamic'])
 class TestPytestParallel:
   def test_00(self, scheduler): run_pytest_parallel_test('seq'                             , 1, scheduler)
   
-  #def test_01(self, scheduler): run_pytest_parallel_test('two_success_tests_one_proc'      , 1, scheduler) # need at least 1 proc
-  #def test_02(self, scheduler): run_pytest_parallel_test('two_success_tests_one_proc'      , 2, scheduler) # 2 tests executing concurrently
-  #def test_04(self, scheduler): run_pytest_parallel_test('two_success_tests_one_proc'      , 4, scheduler) # 2 tests executing concurrently, 2 procs do nothing
+  def test_01(self, scheduler): run_pytest_parallel_test('two_success_tests_one_proc'      , 1, scheduler) # need at least 1 proc
+  def test_02(self, scheduler): run_pytest_parallel_test('two_success_tests_one_proc'      , 2, scheduler) # 2 tests executing concurrently
+  def test_04(self, scheduler): run_pytest_parallel_test('two_success_tests_one_proc'      , 4, scheduler) # 2 tests executing concurrently, 2 procs do nothing
 
-  #def test_05(self, scheduler): run_pytest_parallel_test('two_fail_tests_one_proc'         , 1, scheduler) # same but failing
-  #def test_06(self, scheduler): run_pytest_parallel_test('two_fail_tests_one_proc'         , 2, scheduler)
-  #def test_07(self, scheduler): run_pytest_parallel_test('two_fail_tests_one_proc'         , 4, scheduler)
+  def test_05(self, scheduler): run_pytest_parallel_test('two_fail_tests_one_proc'         , 1, scheduler) # same but failing
+  def test_06(self, scheduler): run_pytest_parallel_test('two_fail_tests_one_proc'         , 2, scheduler)
+  def test_07(self, scheduler): run_pytest_parallel_test('two_fail_tests_one_proc'         , 4, scheduler)
 
-  #def test_08(self, scheduler): run_pytest_parallel_test('two_success_tests_two_procs'     , 2, scheduler) # need at least 2 procs
-  #def test_09(self, scheduler): run_pytest_parallel_test('two_success_tests_two_procs'     , 4, scheduler) # 4 tests (needing 2 procs each) executing concurrently
-  #def test_10(self, scheduler): run_pytest_parallel_test('two_success_tests_two_procs'     , 1, scheduler, suffix='_skip') # the two test will be skipped (not enough procs)
+  def test_08(self, scheduler): run_pytest_parallel_test('two_success_tests_two_procs'     , 2, scheduler) # need at least 2 procs
+  def test_09(self, scheduler): run_pytest_parallel_test('two_success_tests_two_procs'     , 4, scheduler) # 4 tests (needing 2 procs each) executing concurrently
+  def test_10(self, scheduler): run_pytest_parallel_test('two_success_tests_two_procs'     , 1, scheduler, suffix='_skip') # the two test will be skipped (not enough procs)
 
-  #def test_11(self, scheduler): run_pytest_parallel_test('two_fail_tests_two_procs'        , 2, scheduler) # same but failing
-  #def test_12(self, scheduler): run_pytest_parallel_test('two_fail_tests_two_procs'        , 4, scheduler)
-  #def test_13(self, scheduler): run_pytest_parallel_test('two_fail_tests_two_procs'        , 1, scheduler, suffix='_skip')
+  def test_11(self, scheduler): run_pytest_parallel_test('two_fail_tests_two_procs'        , 2, scheduler) # same but failing
+  def test_12(self, scheduler): run_pytest_parallel_test('two_fail_tests_two_procs'        , 4, scheduler)
+  def test_13(self, scheduler): run_pytest_parallel_test('two_fail_tests_two_procs'        , 1, scheduler, suffix='_skip')
 
-  #def test_14(self, scheduler): run_pytest_parallel_test('success_0_fail_1'                , 2, scheduler) # one test failing (succeed one rank 0, fail on rank 1)
+  def test_14(self, scheduler): run_pytest_parallel_test('success_0_fail_1'                , 2, scheduler) # one test failing (succeed one rank 0, fail on rank 1)
 
-  #def test_15(self, scheduler): run_pytest_parallel_test('two_success_fail_tests_two_procs', 2, scheduler) # one test succeeds, one test fails
-  #def test_16(self, scheduler): run_pytest_parallel_test('two_success_fail_tests_two_procs', 4, scheduler) # same, more procs
+  def test_15(self, scheduler): run_pytest_parallel_test('two_success_fail_tests_two_procs', 2, scheduler) # one test succeeds, one test fails
+  def test_16(self, scheduler): run_pytest_parallel_test('two_success_fail_tests_two_procs', 4, scheduler) # same, more procs
 
-  #def test_17(self, scheduler): run_pytest_parallel_test('fixture_error'                   , 1, scheduler) # check that fixture errors are correctly reported
+  def test_17(self, scheduler): run_pytest_parallel_test('fixture_error'                   , 1, scheduler) # check that fixture errors are correctly reported
 
-  #def test_18(self, scheduler): run_pytest_parallel_test('parametrize'                     , 2, scheduler) # check the parametrize API 
+  def test_18(self, scheduler): run_pytest_parallel_test('parametrize'                     , 2, scheduler) # check the parametrize API 
 
 
 #def test_18(): run_pytest_parallel_test('scheduling' , 4, 'static')
