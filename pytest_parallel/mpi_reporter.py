@@ -9,8 +9,8 @@ from .algo import partition, upper_bound
 import numpy as np
 
 # TODO DEL
-import time
-def print_mpi(inter_comm, *args):
+#import time
+def print_mpi2(inter_comm, *args):
   red     = "\u001b[31m"
   blue    = "\u001b[34m"
   reset   = "\u001b[0m"
@@ -19,6 +19,15 @@ def print_mpi(inter_comm, *args):
   else:
     prefix = blue
   print(prefix,*args,reset)
+def print_mpi(inter_comm, *args):
+  red     = "\u001b[31m"
+  blue    = "\u001b[34m"
+  reset   = "\u001b[0m"
+  if is_dyn_master_process(inter_comm):
+    prefix = red
+  else:
+    prefix = blue
+  #print(prefix,*args,reset)
 # END TODO DEL
 
 def gather_report(mpi_reports, n_sub_rank):
@@ -169,11 +178,13 @@ def group_items_by_parallel_steps(items, n_workers):
   return items_by_step, items_to_skip
 
 def run_item_test(item, nextitem, session):
+  #print('\n\n======== run_item_test ========')
   item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
   if session.shouldfail:
       raise session.Failed(session.shouldfail)
   if session.shouldstop:
       raise session.Interrupted(session.shouldstop)
+  #print('======== run_item_test done ========\n')
 
 def prepare_items_to_run(items, comm):
   n_rank = comm.Get_size()
@@ -236,7 +247,7 @@ class StaticScheduler(MPIReporter):
     """
       Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
       and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
-      Also, tf test is not run on this proc, mark the outcome accordingly
+      Also, if test is not run on this proc, mark the outcome accordingly
     """
     result = yield
     report = result.get_result()
@@ -340,6 +351,11 @@ def schedule_test(item, available_procs, inter_comm):
     inter_comm.send((original_idx,sub_ranks), dest=sub_rank, tag=SCHEDULED_WORK_TAG)
   print_mpi(inter_comm,'schedule_test after send')
 
+def signal_all_done(inter_comm):
+  n_workers = number_of_working_processes(inter_comm)
+  for i_rank in range(n_workers):
+    inter_comm.send((-1,[]), dest=i_rank, tag=SCHEDULED_WORK_TAG)
+
 def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
   # receive from any proc
   status = MPI.Status()
@@ -373,29 +389,35 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
   print_mpi(inter_comm,'wait_test_to_complete after run')
 
 def wait_last_tests_to_complete(items_to_run, session, available_procs, inter_comm):
+  print_mpi(inter_comm,'wait_last_tests_to_complete')
   while np.sum(available_procs) < len(available_procs):
     wait_test_to_complete(items_to_run, session, available_procs, inter_comm)
 
 
 ####### Client #######
-def receive_run_and_report_tests(items_to_run, session, global_comm, inter_comm):
-  # receive
-  print_mpi(inter_comm,'receive_run_and_report_tests before recv')
-  original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
-  print_mpi(inter_comm,'receive_run_and_report_tests after recv')
+def receive_run_and_report_tests(items_to_run, session, current_item_requests, global_comm, inter_comm):
+  while True:
+    # receive
+    print_mpi(inter_comm,'receive_run_and_report_tests before recv')
+    original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
+    print_mpi(inter_comm,'receive_run_and_report_tests after recv')
+    if original_idx == -1: return # signal work is done
 
-  # run
-  sub_comm = sub_comm_from_ranks(global_comm, sub_ranks)
-  item = items_to_run[original_idx]
-  item._sub_comm = sub_comm
-  nextitem = None # not known at this point
-  run_item_test(item, nextitem, session)
+    # run
+    sub_comm = sub_comm_from_ranks(global_comm, sub_ranks)
+    item = items_to_run[original_idx]
+    item._sub_comm = sub_comm
+    nextitem = None # not known at this point
+    run_item_test(item, nextitem, session)
 
-#def client_logfinish(item, inter_comm)
-#  original_idx = item._original_index
-  print_mpi(inter_comm,'receive_run_and_report_tests before send')
-  inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
-  print_mpi(inter_comm,'receive_run_and_report_tests after send')
+    # signal work is done for the test
+    print_mpi(inter_comm,'receive_run_and_report_tests before send')
+    inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
+    print_mpi(inter_comm,'receive_run_and_report_tests after send')
+
+    MPI.Request.waitall(current_item_requests) # make sure all report isends have been received
+    current_item_requests.clear()
+  
 
 
 
@@ -403,6 +425,7 @@ class DynamicScheduler(MPIReporter):
   def __init__(self, global_comm, inter_comm):
     self.global_comm = global_comm
     self.inter_comm = inter_comm
+    self.current_item_requests = []
 
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
@@ -431,6 +454,7 @@ class DynamicScheduler(MPIReporter):
     if is_dyn_master_process(self.inter_comm):
       # mark and run skipped tests
       for i, item in enumerate(items_to_skip):
+        item._sub_comm = MPI.COMM_SELF
         mark_skip(item)
         nextitem = items_to_skip[i + 1] if i + 1 < len(items_to_skip) else None
         run_item_test(item, nextitem, session)
@@ -456,8 +480,9 @@ class DynamicScheduler(MPIReporter):
           del items_left_to_run[item_idx]
 
       wait_last_tests_to_complete(items_to_run, session, available_procs, self.inter_comm)
+      signal_all_done(self.inter_comm)
     else: # worker proc
-      receive_run_and_report_tests(items_to_run, session, self.global_comm, self.inter_comm)
+      receive_run_and_report_tests(items_to_run, session, self.current_item_requests, self.global_comm, self.inter_comm)
     print_mpi(self.inter_comm,'\nEnd loop')
     return True
 
@@ -466,14 +491,18 @@ class DynamicScheduler(MPIReporter):
     """
       Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
       and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
-      Also, tf test is not run on this proc, mark the outcome accordingly
+      Also, if test is not run on this proc, mark the outcome accordingly
     """
     result = yield
     report = result.get_result()
     if is_dyn_master_process(self.inter_comm):
       print_mpi(self.inter_comm,'    is_dyn_master_process')
-      report._master_running_proc = item._sub_ranks[0]
-      report.outcome = 'only_fake_run_on_master_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
+      if hasattr(item,'_mpi_skip') and item._mpi_skip:
+        report._mpi_skip = True
+        report._sub_comm = item._sub_comm
+      else:
+        report._master_running_proc = item._sub_ranks[0]
+        report.outcome = 'only_fake_run_on_master_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
     else:
       print_mpi(self.inter_comm,'    NOT is_dyn_master_process')
       report._sub_comm = item._sub_comm
@@ -481,21 +510,35 @@ class DynamicScheduler(MPIReporter):
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     print_mpi(self.inter_comm,'pytest_runtest_logreport begin')
-    #time.sleep(1)
+    #print_mpi2(self.inter_comm,'\n\nreport.nodeid = ',report.nodeid)
+    #print_mpi2(self.inter_comm,'\n\nreport.outcome = ',report.outcome)
+    #if report.outcome == 'skipped': # TODO does not work because skipped only in setup, but then the others are not supposed to run?
+    if hasattr(report,'_mpi_skip') and report._mpi_skip:
+      self._runtest_logreport(report) # has been 'run' locally: do nothing special
+    else:
+      assert report.when == 'setup' or report.when == 'call' or report.when == 'teardown' # only know tags
+      tag = WHEN_TAGS[report.when]
 
-    assert report.when == 'setup' or report.when == 'call' or report.when == 'teardown' # only know tags
-    tag = WHEN_TAGS[report.when]
+      # master ranks of each sub_comm must send their report to rank 0
+      if not is_dyn_master_process(self.inter_comm):
+        sub_comm = report._sub_comm
+        self._runtest_logreport(report)
 
-    # master ranks of each sub_comm must send their report to rank 0
-    if not is_dyn_master_process(self.inter_comm):
-      sub_comm = report._sub_comm
-      self._runtest_logreport(report)
+        if sub_comm.Get_rank() == 0: # if local master proc, send
+          # The idea of the scheduler is the following:
+          #   The server schedules test over clients
+          #   A client executes the test then report to the server it is done
+          #   The server execute the PyTest pipeline to make it think it ran the test (but only receives the reports of the client)
+          #   The server continues its scheduling
+          # Here in the report, we need an isend, because the ordering is the following:
+          #   Client: run test, isend reports, send done to server
+          #   Server: recv done from client, 'run' test (i.e. recv reports)
+          # So the 'send done' must be received before the 'send report'
+          request = self.inter_comm.isend(report, dest=0, tag=tag)
+          self.current_item_requests.append(request)
+      else: # global master: receive
+        mpi_report = self.inter_comm.recv(source=report._master_running_proc, tag=tag)
 
-      if sub_comm.Get_rank() == 0: # if local master proc, send
-        self.inter_comm.send(report, dest=0, tag=tag) # TODO isend, because need to send 'done' message after and master waits for 'done' message first, and THEN the report messages
-    else: # global master: receive
-      mpi_report = self.inter_comm.recv(source=report._master_running_proc, tag=tag)
-
-      report.outcome  = mpi_report.outcome
-      report.longrepr = mpi_report.longrepr
+        report.outcome  = mpi_report.outcome
+        report.longrepr = mpi_report.longrepr
     print_mpi(self.inter_comm,'pytest_runtest_logreport end')

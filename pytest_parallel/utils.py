@@ -24,6 +24,7 @@ def mark_skip(item):
 
   skip_msg = f'Not enough procs to execute: {n_proc_test} required but only {n_rank} available'
   item.add_marker(pytest.mark.skip(reason=skip_msg, append=False))
+  item._mpi_skip = True
 
 
 
