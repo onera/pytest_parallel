@@ -5,7 +5,8 @@ from mpi4py import MPI
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
 from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs, is_dyn_master_process
-from .algo import partition, upper_bound
+from .algo import partition, lower_bound#, upper_bound #TODO
+import operator
 import numpy as np
 
 # TODO DEL
@@ -322,8 +323,15 @@ def item_with_biggest_admissible_n_proc(items, n_av_procs):
   #   sorted(items, key)
   #   len(items)>0
 
-  idx = upper_bound(items, n_av_procs, key)
-  return idx-1 # return the one just before asking too much (-1 if all ask too much)
+  # best choices: tests requiring the most procs while still 'runnable'
+  # among those, we favor the first in the array for 'stability' reasons (no reordering when not needed)
+  idx = lower_bound(items, n_av_procs, key)
+  if idx==0 and items[idx]._n_mpi_proc>n_av_procs: idx = -1 # return -1 if all items ask too much
+  if idx==len(items): # more than enough available procs
+    # Here items[-1] would be OK, but prefer the first item with the same _n_mpi_procs
+    max_needed_n_proc = items[-1]._n_mpi_proc
+    idx = lower_bound(items, max_needed_n_proc, key)
+  return idx
 
 def mark_original_index(items):
   for i, item in enumerate(items):
@@ -492,7 +500,7 @@ class DynamicScheduler(MPIReporter):
         if item_idx == -1:
           wait_test_to_complete(items_to_run, session, available_procs, self.inter_comm)
         else:
-          print_mpi2(self.inter_comm,'runtest loop | item = ',items_left_to_run[item_idx],', item_idx = ',item_idx)
+          #print_mpi2(self.inter_comm,'runtest loop | item = ',items_left_to_run[item_idx],', item_idx = ',item_idx)
           schedule_test(items_left_to_run[item_idx], available_procs, self.inter_comm)
           del items_left_to_run[item_idx]
 
