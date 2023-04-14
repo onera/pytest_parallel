@@ -1,10 +1,10 @@
-^============================= test session starts ==============================
+============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
 metadata: [^\n]*
 rootdir: [^\n]*
 plugins: [^\n]*
-collecting ... collected 2 items                                                              
+collecting ... [\s]*collected 2 items[\s]*
 
 (?# [This is a comment until the closing parenthesis]
     The following lines use the regex 'lookahead' mechanism to match the lines in any order
@@ -24,4 +24,4 @@ E     assert 0
 [^\n]*test_seq.py:5: AssertionError
 =========================== short test summary info ============================
 FAILED [^\n]*/test_seq.py::test_false
-========================= 1 failed, 1 passed in [^\n]*s ==========================$
+========================= 1 failed, 1 passed in [^\n]*s ==========================

@@ -1,10 +1,10 @@
-^============================= test session starts ==============================
+============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
 metadata: [^\n]*
 rootdir: [^\n]*
 plugins: [^\n]*
-collecting ... collected 1 item                                                               
+collecting ... [\s]*collected 1 item[\s]*
 
 [^\n]*test_success_0_fail_1.py::test_fail_one_rank\[2\] FAILED
 

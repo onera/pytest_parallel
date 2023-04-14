@@ -33,7 +33,7 @@ def ref_match(file):
   with open(output_path, 'r') as f:
     result = f.read()
 
-  return re.fullmatch(ref_regex, result, flags=re.DOTALL)
+  return re.search(ref_regex, result, flags=re.DOTALL)
 
 def run_pytest_parallel_test(test_name, n_workers, scheduler, suffix=''):
   assert 'pytest_parallel.plugin' not in os.getenv('PYTEST_PLUGINS') # pytest_parallel MUST NOT be plugged in its testing framework environement

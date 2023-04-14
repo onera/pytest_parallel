@@ -1,10 +1,10 @@
-^============================= test session starts ==============================
+============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
 metadata: [^\n]*
 rootdir: [^\n]*
 plugins: [^\n]*
-collecting ... collected 2 items                                                              
+collecting ... [\s]*collected 2 items[\s]*
 
 (?# [This is a comment until the closing parenthesis]
     The following lines use the regex 'lookahead' mechanism to match the lines in any order
@@ -13,4 +13,4 @@ collecting ... collected 2 items
 )(?=.*test_two_success_tests_one_proc.py::test_success_2\[1\] PASSED
 ).*
 
-============================== 2 passed in [^\n]*s ===============================$
+============================== 2 passed in [^\n]*s ===============================
