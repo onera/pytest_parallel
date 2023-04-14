@@ -8,8 +8,13 @@ import sys
 def get_n_proc_for_test(item: Item) -> int :
   try:
     return item.callspec.getparam('comm')
-  except AttributeError: # no `comm` fixture => sequential test case
-    return 1
+  # TODO backward compatibility begin
+  except: # fallback to old name
+    try:
+      return item.callspec.getparam('sub_comm')
+  # TODO backward compatibility end
+    except AttributeError: # no `comm` fixture => sequential test case
+      return 1
 
 
 def add_n_procs(items):

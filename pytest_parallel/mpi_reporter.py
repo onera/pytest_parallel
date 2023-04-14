@@ -5,31 +5,10 @@ from mpi4py import MPI
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
 
 from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs, is_dyn_master_process
-from .algo import partition, lower_bound#, upper_bound #TODO
+from .algo import partition, lower_bound
 import operator
 import numpy as np
 
-# TODO DEL
-#import time
-def print_mpi2(inter_comm, *args):
-  red     = "\u001b[31m"
-  blue    = "\u001b[34m"
-  reset   = "\u001b[0m"
-  if is_dyn_master_process(inter_comm):
-    prefix = red
-  else:
-    prefix = blue
-  #print(prefix,*args,reset)
-def print_mpi(inter_comm, *args):
-  red     = "\u001b[31m"
-  blue    = "\u001b[34m"
-  reset   = "\u001b[0m"
-  if is_dyn_master_process(inter_comm):
-    prefix = red
-  else:
-    prefix = blue
-  #print(prefix,*args,reset)
-# END TODO DEL
 
 def gather_report(mpi_reports, n_sub_rank):
   assert len(mpi_reports) == n_sub_rank
@@ -185,13 +164,11 @@ def group_items_by_parallel_steps(items, n_workers):
   return items_by_step, items_to_skip
 
 def run_item_test(item, nextitem, session):
-  #print('\n\n======== run_item_test ========')
   item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
   if session.shouldfail:
       raise session.Failed(session.shouldfail)
   if session.shouldstop:
       raise session.Interrupted(session.shouldstop)
-  #print('======== run_item_test done ========\n')
 
 def prepare_items_to_run(items, comm):
   n_rank = comm.Get_size()
@@ -348,7 +325,6 @@ WHEN_TAGS = {'setup':REPORT_SETUP_TAG, 'call':REPORT_RUN_TAG, 'teardown':REPORT_
 def schedule_test(item, available_procs, inter_comm):
   n_procs = item._n_mpi_proc
   original_idx = item._original_index
-  print_mpi2(inter_comm,'schedule_test | item = ',item,', original_idx = ',original_idx)
 
   sub_ranks = []
   i = 0
@@ -358,17 +334,14 @@ def schedule_test(item, available_procs, inter_comm):
     i += 1
 
   item._sub_ranks = sub_ranks
-  print_mpi(inter_comm,'sub_ranks = ',sub_ranks)
 
   # the procs are busy
   for sub_rank in sub_ranks:
     available_procs[sub_rank] = False
 
   # TODO isend would be slightly better (less waiting)
-  print_mpi(inter_comm,'schedule_test before send')
   for sub_rank in sub_ranks:
     inter_comm.send((original_idx,sub_ranks), dest=sub_rank, tag=SCHEDULED_WORK_TAG)
-  print_mpi(inter_comm,'schedule_test after send')
 
 def signal_all_done(inter_comm):
   n_workers = number_of_working_processes(inter_comm)
@@ -378,21 +351,13 @@ def signal_all_done(inter_comm):
 def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
   # receive from any proc
   status = MPI.Status()
-  print_mpi(inter_comm,'wait_test_to_complete before recv')
   original_idx = inter_comm.recv(source=MPI.ANY_SOURCE, tag=WORK_DONE_TAG, status=status)
-  print_mpi(inter_comm,'wait_test_to_complete after recv')
   first_rank_done = status.Get_source()
 
   # get associated item
   item = items_to_run[original_idx]
-  print_mpi2(inter_comm,'wait_test_to_complete | len(items_to_run) = ',len(items_to_run))
-  print_mpi2(inter_comm,'wait_test_to_complete | items_to_run = ',items_to_run)
-  print_mpi2(inter_comm,'wait_test_to_complete | item = ',item,', original_idx = ',original_idx, ' item._original_index = ', item._original_index)
   n_proc = item._n_mpi_proc
   sub_ranks = item._sub_ranks
-  #print_mpi2(inter_comm,'wait_test_to_complete after sub_ranks')
-  print_mpi(inter_comm,'first_rank_done = ',first_rank_done)
-  print_mpi(inter_comm,'sub_ranks = ',sub_ranks)
   assert first_rank_done in sub_ranks
 
   # receive done message from all other proc associated to the item
@@ -406,13 +371,10 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
     available_procs[sub_rank] = True
 
   # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
-  print_mpi(inter_comm,'wait_test_to_complete before run')
   nextitem = None # not known at this point
   run_item_test(item, nextitem, session)
-  print_mpi(inter_comm,'wait_test_to_complete after run')
 
 def wait_last_tests_to_complete(items_to_run, session, available_procs, inter_comm):
-  print_mpi(inter_comm,'wait_last_tests_to_complete')
   while np.sum(available_procs) < len(available_procs):
     wait_test_to_complete(items_to_run, session, available_procs, inter_comm)
 
@@ -421,9 +383,7 @@ def wait_last_tests_to_complete(items_to_run, session, available_procs, inter_co
 def receive_run_and_report_tests(items_to_run, session, current_item_requests, global_comm, inter_comm):
   while True:
     # receive
-    print_mpi(inter_comm,'receive_run_and_report_tests before recv')
     original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
-    print_mpi(inter_comm,'receive_run_and_report_tests after recv')
     if original_idx == -1: return # signal work is done
 
     # run
@@ -434,9 +394,7 @@ def receive_run_and_report_tests(items_to_run, session, current_item_requests, g
     run_item_test(item, nextitem, session)
 
     # signal work is done for the test
-    print_mpi(inter_comm,'receive_run_and_report_tests before send')
     inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
-    print_mpi(inter_comm,'receive_run_and_report_tests after send')
 
     MPI.Request.waitall(current_item_requests) # make sure all report isends have been received
     current_item_requests.clear()
@@ -461,8 +419,6 @@ class DynamicScheduler(MPIReporter):
 
     if session.config.option.collectonly:
       return True
-
-    print_mpi(self.inter_comm,'\nBegin loop')
 
   # parallel algo begin
     n_workers = number_of_working_processes(self.inter_comm)
@@ -492,7 +448,6 @@ class DynamicScheduler(MPIReporter):
       available_procs = np.ones(n_workers, dtype=np.int8)
 
       while len(items_left_to_run) > 0:
-        print_mpi2(self.inter_comm,'runtest loop | len(items_left_to_run)= ',len(items_left_to_run))
         n_av_procs = np.sum(available_procs)
 
         item_idx = item_with_biggest_admissible_n_proc(items_left_to_run, n_av_procs)
@@ -500,7 +455,6 @@ class DynamicScheduler(MPIReporter):
         if item_idx == -1:
           wait_test_to_complete(items_to_run, session, available_procs, self.inter_comm)
         else:
-          #print_mpi2(self.inter_comm,'runtest loop | item = ',items_left_to_run[item_idx],', item_idx = ',item_idx)
           schedule_test(items_left_to_run[item_idx], available_procs, self.inter_comm)
           del items_left_to_run[item_idx]
 
@@ -508,7 +462,6 @@ class DynamicScheduler(MPIReporter):
       signal_all_done(self.inter_comm)
     else: # worker proc
       receive_run_and_report_tests(items_to_run, session, self.current_item_requests, self.global_comm, self.inter_comm)
-    print_mpi(self.inter_comm,'\nEnd loop')
     return True
 
   @pytest.hookimpl(hookwrapper=True)
@@ -521,7 +474,6 @@ class DynamicScheduler(MPIReporter):
     result = yield
     report = result.get_result()
     if is_dyn_master_process(self.inter_comm):
-      print_mpi(self.inter_comm,'    is_dyn_master_process')
       if hasattr(item,'_mpi_skip') and item._mpi_skip:
         report._mpi_skip = True
         report._sub_comm = item._sub_comm
@@ -529,15 +481,11 @@ class DynamicScheduler(MPIReporter):
         report._master_running_proc = item._sub_ranks[0]
         report.outcome = 'only_fake_run_on_master_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
     else:
-      print_mpi(self.inter_comm,'    NOT is_dyn_master_process')
       report._sub_comm = item._sub_comm
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
-    print_mpi(self.inter_comm,'pytest_runtest_logreport begin')
-    #print_mpi2(self.inter_comm,'\n\nreport.nodeid = ',report.nodeid)
-    #print_mpi2(self.inter_comm,'\n\nreport.outcome = ',report.outcome)
-    #if report.outcome == 'skipped': # TODO does not work because skipped only in setup, but then the others are not supposed to run?
+    #if report.outcome == 'skipped': # TODO does not work because skipped only in setup, (but then the others should supposed not run...=>?)
     if hasattr(report,'_mpi_skip') and report._mpi_skip:
       self._runtest_logreport(report) # has been 'run' locally: do nothing special
     else:
@@ -566,4 +514,3 @@ class DynamicScheduler(MPIReporter):
 
         report.outcome  = mpi_report.outcome
         report.longrepr = mpi_report.longrepr
-    print_mpi(self.inter_comm,'pytest_runtest_logreport end')

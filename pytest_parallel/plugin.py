@@ -1,7 +1,4 @@
 import pytest
-import sys
-
-from .mark import comm # seems unused, but used by pytest # TODO check
 
 from mpi4py import MPI
 
@@ -13,8 +10,23 @@ from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
 
 from .utils import spawn_master_process, is_master_process
 
+
+# --------------------------------------------------------------------------
 def pytest_addoption(parser):
   parser.addoption('--scheduler', dest='scheduler', type='choice', choices=['sequential','static','dynamic'], default='sequential')
+
+@pytest.fixture
+def comm(request):
+  """
+  Only return a previous MPI Communicator (build at prepare step )
+  """
+  return request._pyfuncitem._sub_comm # TODO clean
+
+## TODO backward compatibility begin
+@pytest.fixture
+def sub_comm(request):
+  return request._pyfuncitem._sub_comm
+## TODO backward compatibility end
 
 
 # --------------------------------------------------------------------------
@@ -109,9 +121,3 @@ def pytest_configure(config):
 #  #if xml:
 #  #    del config._store[xml_key]
 #  #    config.pluginmanager.unregister(xml)
-
-#@pytest.hookimpl(hookwrapper=True, tryfirst=True)
-#def pytest_sessionfinish(session):
-#  #print('START plugin pytest_sessionfinish')
-#  outcome = yield
-#  #print('END plugin pytest_sessionfinish')
