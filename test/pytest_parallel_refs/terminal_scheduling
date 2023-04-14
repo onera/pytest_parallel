@@ -1,0 +1,22 @@
+^============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... collected 8 items                                                              
+
+(?# [This is a comment until the closing parenthesis]
+    The following lines use the regex 'lookahead' mechanism to match the lines in any order
+    This is useful because schedulers may not schedule tests in the same order
+)(?=.*test_scheduling.py::test_0\[2\] PASSED
+)(?=.*test_scheduling.py::test_1\[2\] PASSED
+)(?=.*test_scheduling.py::test_2\[3\] PASSED
+)(?=.*test_scheduling.py::test_3\[1\] PASSED
+)(?=.*test_scheduling.py::test_4\[1\] PASSED
+)(?=.*test_scheduling.py::test_5\[1\] PASSED
+)(?=.*test_scheduling.py::test_6\[2\] PASSED
+)(?=.*test_scheduling.py::test_7\[2\] PASSED
+).*
+
+============================== 8 passed in [^\n]*s ===============================

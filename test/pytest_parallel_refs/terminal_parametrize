@@ -8,7 +8,7 @@ collecting ... collected 8 items
 
 (?# [This is a comment until the closing parenthesis]
     The following lines use the regex 'lookahead' mechanism to match the lines in any order
-    This is useful because schedulers may not schedule test in the same order
+    This is useful because schedulers may not schedule tests in the same order
 )(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list\[1\] PASSED
 )(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list\[2\] PASSED
 )(?=.*test_parametrize.py::test_mark_mpi_decorator_with_other_pytest_deco\[2-3\] PASSED

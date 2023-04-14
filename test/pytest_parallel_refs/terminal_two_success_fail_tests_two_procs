@@ -6,8 +6,12 @@ rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... collected 2 items                                                              
 
-[^\n]*test_two_success_fail_tests_two_procs.py::test_success_1\[2\] PASSED
-[^\n]*test_two_success_fail_tests_two_procs.py::test_fail_2\[2\] FAILED
+(?# [This is a comment until the closing parenthesis]
+    The following lines use the regex 'lookahead' mechanism to match the lines in any order
+    This is useful because schedulers may not schedule tests in the same order
+)(?=.*test_two_success_fail_tests_two_procs.py::test_success_1\[2\] PASSED
+)(?=.*test_two_success_fail_tests_two_procs.py::test_fail_2\[2\] FAILED
+).*
 
 =================================== FAILURES ===================================
 ________________________________ test_fail_2\[2\] ________________________________

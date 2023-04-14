@@ -56,9 +56,7 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, suffix=''):
   assert ref_match(output_file_name)
 
 
-#@pytest.mark.parametrize('scheduler',['sequential','static'])
-#@pytest.mark.parametrize('scheduler',['sequential'])
-@pytest.mark.parametrize('scheduler',['dynamic'])
+@pytest.mark.parametrize('scheduler',['sequential','static','dynamic'])
 class TestPytestParallel:
   def test_00(self, scheduler): run_pytest_parallel_test('seq'                             , 1, scheduler)
   
@@ -87,22 +85,18 @@ class TestPytestParallel:
 
   def test_18(self, scheduler): run_pytest_parallel_test('parametrize'                     , 2, scheduler) # check the parametrize API 
 
-
-#def test_18(): run_pytest_parallel_test('scheduling' , 4, 'static')
-#def test_19(): run_pytest_parallel_test('scheduling' , 4, 'dynamic')
+  def test_19(self, scheduler): run_pytest_parallel_test('scheduling'                      , 4, scheduler) # check 'real' case
 
 
-
-test = 'parametrize'
-file = 'terminal_'+test
-
-#refs_dir = Path('/scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/test/pytest_parallel_refs')
-#output_dir = Path('/scratchm/bberthou/projects/fs_cgns_adapter/external/pytest-mpi-check/test/pytest_parallel_refs')
-template_path = refs_dir/file
-with open(template_path, 'r') as f:
-  ref_regex = f.read()
-output_path = output_dir/file
-with open(output_path, 'r') as f:
-  result = f.read()
-
-print(re.findall(ref_regex, result, flags=re.DOTALL))
+## If one test fail, it may be useful to debug regex matching along the following lines
+#test = 'two_fail_tests_one_proc'
+#file = 'terminal_'+test
+#
+#template_path = refs_dir/file
+#with open(template_path, 'r') as f:
+#  ref_regex = f.read()
+#output_path = output_dir/file
+#with open(output_path, 'r') as f:
+#  result = f.read()
+#
+#print(re.findall(ref_regex, result, flags=re.DOTALL))
