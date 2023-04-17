@@ -291,7 +291,15 @@ class StaticScheduler:
     items = items_to_run_on_this_proc(items_by_steps, items_to_skip, self.global_comm)
 
     for i, item in enumerate(items):
-      nextitem = items[i + 1] if i + 1 < len(items) else None
+      #nextitem = items[i + 1] if i + 1 < len(items) else None
+      # For optimization purposes, it would be nice to have the previous commented line
+      # (`nextitem` is only used internally by PyTest in _setupstate.teardown_exact)
+      # Here, it does not work:
+      #   it seems that things are messed up on rank 0
+      #   because the nextitem might not be run (see pytest_runtest_setup/call/teardown hooks just above)
+      # In practice though, it seems that it is not the main thing that slows things down...
+
+      nextitem = None
       run_item_test(item, nextitem, session)
 
     # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
