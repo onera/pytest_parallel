@@ -24,7 +24,6 @@ def get_n_proc_for_test(item: Item) -> int :
         return 1
   else:
     return 1
-
 # TODO backward compatibility end
 
 #def get_n_proc_for_test(item: Item) -> int :

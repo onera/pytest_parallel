@@ -37,49 +37,38 @@ def gather_report(mpi_reports, n_sub_rank):
   return goutcome, glongrepr
 
 
-class MPIReporter(object):
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_makereport(self, item):
-    """
-      Need to hook to pass the test sub-comm to `pytest_runtest_logreport`,
-      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
-    """
-    result = yield
-    report = result.get_result()
-    report._sub_comm = item._sub_comm
+def gather_report_on_local_rank_0(report):
+  """
+    Gather reports from all procs participating in the test on rank 0 of the sub_comm
+  """
+  sub_comm = report._sub_comm
+  del report._sub_comm # No need to keep it in the report
+                       # Furthermore we need to serialize the report
+                       # and mpi4py does not know how to serialize report._sub_comm
+  i_sub_rank = sub_comm.Get_rank()
+  n_sub_rank = sub_comm.Get_size()
 
-  def _runtest_logreport(self, report):
-    """
-      Gather reports from all procs participating in the test on rank 0 of the sub_comm
-    """
-    sub_comm = report._sub_comm
-    del report._sub_comm # No need to keep it in the report
-                         # Furthermore we need to serialize the report
-                         # and mpi4py does not know how to serialize report._sub_comm
-    i_sub_rank = sub_comm.Get_rank()
-    n_sub_rank = sub_comm.Get_size()
+  if report.outcome != 'skipped': # Skipped test are only known by proc 0 -> no merge required
+    # Warning: PyTest reports can actually be quite big
+    request = sub_comm.isend(report, dest=0, tag=i_sub_rank)
 
-    if report.outcome != 'skipped': # Skipped test are only known by proc 0 -> no merge required
-      # Warning: PyTest reports can actually be quite big
-      request = sub_comm.isend(report, dest=0, tag=i_sub_rank)
+    if i_sub_rank == 0:
+      mpi_reports = n_sub_rank * [None]
+      for _ in range(n_sub_rank):
+        status = MPI.Status()
 
-      if i_sub_rank == 0:
-        mpi_reports = n_sub_rank * [None]
-        for _ in range(n_sub_rank):
-          status = MPI.Status()
+        mpi_report = sub_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+        mpi_reports[status.Get_source()] = mpi_report
 
-          mpi_report = sub_comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-          mpi_reports[status.Get_source()] = mpi_report
+      assert None not in mpi_reports # should have received from all ranks of `sub_comm`
+      goutcome, glongrepr = gather_report(mpi_reports, n_sub_rank)
 
-        assert None not in mpi_reports # should have received from all ranks of `sub_comm`
-        goutcome, glongrepr = gather_report(mpi_reports, n_sub_rank)
+      report.outcome  = goutcome
+      report.longrepr = glongrepr
 
-        report.outcome  = goutcome
-        report.longrepr = glongrepr
+    request.wait()
 
-      request.wait()
-
-    sub_comm.barrier()
+  sub_comm.barrier()
 
 
 
@@ -114,9 +103,19 @@ def filter_and_add_sub_comm(items, global_comm):
   return filtered_items
 
 
-class SequentialScheduler(MPIReporter):
+class SequentialScheduler:
   def __init__(self, global_comm):
     self.global_comm = global_comm
+
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_makereport(self, item):
+    """
+      Need to hook to pass the test sub-comm to `pytest_runtest_logreport`,
+      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+    """
+    result = yield
+    report = result.get_result()
+    report._sub_comm = item._sub_comm
 
   @pytest.mark.trylast
   def pytest_collection_modifyitems(self, config, items):
@@ -124,7 +123,7 @@ class SequentialScheduler(MPIReporter):
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
-    self._runtest_logreport(report)
+    gather_report_on_local_rank_0(report)
 
   @pytest.hookimpl(hookwrapper=True, tryfirst=True)
   def pytest_runtestloop(self, session) -> bool:
@@ -134,7 +133,6 @@ class SequentialScheduler(MPIReporter):
     if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
       session.testscollected = 1
     return True
-
 
 
 
@@ -211,7 +209,7 @@ def items_to_run_on_this_proc(items_by_steps, items_to_skip, comm):
   if i_rank == 0:
     for item in items_to_skip:
       item._sub_comm = MPI.COMM_SELF
-      item._master_running_proc = i_rank
+      item._master_running_proc = 0
       item._run_on_this_proc = True
       mark_skip(item)
     items += items_to_skip
@@ -222,9 +220,9 @@ def items_to_run_on_this_proc(items_by_steps, items_to_skip, comm):
 
   return items
 
-class StaticScheduler(MPIReporter):
+class StaticScheduler:
   def __init__(self, global_comm):
-    self.global_comm = global_comm
+    self.global_comm = global_comm.Dup() # ensure that all communications within the framework are private to the framework
 
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
@@ -237,23 +235,43 @@ class StaticScheduler(MPIReporter):
     report = result.get_result()
     report._sub_comm = item._sub_comm
     report._master_running_proc = item._master_running_proc
-    if not item._run_on_this_proc:
-      report.outcome = 'not_run_on_this_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     sub_comm = report._sub_comm
-    self._runtest_logreport(report)
+    gather_report_on_local_rank_0(report)
 
     # master ranks of each sub_comm must send their report to rank 0
     if sub_comm.Get_rank() == 0: # only master are concerned
-      if self.global_comm.Get_rank() != 0: # if master is not global master, recv
+      if self.global_comm.Get_rank() != 0: # if master is not global master, send
         self.global_comm.send(report, dest=0)
       elif report._master_running_proc != 0: # else, recv if test run remotely
+        # In the line below, MPI.ANY_TAG will NOT clash with communications outside the framework because self.global_comm is private
         mpi_report = self.global_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
 
         report.outcome  = mpi_report.outcome
         report.longrepr = mpi_report.longrepr
+
+
+  """
+    Run setup/call/teardown on `item` only if `item._run_on_this_proc` is True
+
+    For that, use a hookwrapper that returns `True` if the item is not supposed to run
+    (by PyTest convention, returning a non-None will stop other hooks to run)
+  """
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_setup(self, item):
+    if not item._run_on_this_proc: return True
+    else: yield
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_call(self, item):
+    if not item._run_on_this_proc: return True
+    else: yield
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_teardown(self, item):
+    if not item._run_on_this_proc: return True
+    else: yield
+
 
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
@@ -402,15 +420,38 @@ def receive_run_and_report_tests(items_to_run, session, current_item_requests, g
 
 
 
-class DynamicScheduler(MPIReporter):
+class DynamicScheduler:
   def __init__(self, global_comm, inter_comm):
     self.global_comm = global_comm
     self.inter_comm = inter_comm
     self.current_item_requests = []
 
+
+  """
+    Do not run setup/call/teardown on `item` on master (except for skip tests)
+
+    For that, use a hookwrapper that returns `True` if the item is not supposed to run
+    (by PyTest convention, returning a non-None will stop other hooks to run)
+
+  """
+  #TODO special treatment of skipped test is ugly. See if we can treat them as others
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_setup(self, item):
+    if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
+    else: yield
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_call(self, item):
+    if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
+    else: yield
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_teardown(self, item):
+    if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
+    else: yield
+
+
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
-  # same begining as PyTest default's
+    # same begining as PyTest default's
     if session.testsfailed and not session.config.option.continue_on_collection_errors:
       raise session.Interrupted(
         "%d error%s during collection"
@@ -420,17 +461,22 @@ class DynamicScheduler(MPIReporter):
     if session.config.option.collectonly:
       return True
 
-  # parallel algo begin
+    # parallel algo begin
     n_workers = number_of_working_processes(self.inter_comm)
 
-    # add proc to items
+    ## add proc to items
     add_n_procs(session.items)
 
-    # isolate skips
+    ## isolate skips
     has_enough_procs = lambda item: item._n_mpi_proc <= n_workers
     items_to_run, items_to_skip = partition(session.items, has_enough_procs)
+
+    ## remember original position
+    #   since every proc is doing that, the original position is the same for all procs
+    #   hence, the position can be sent and received among procs: it will lead to the same item
     mark_original_index(items_to_run)
 
+    ## if master proc, schedule
     if is_dyn_master_process(self.inter_comm):
       # mark and run skipped tests
       for i, item in enumerate(items_to_skip):
@@ -440,11 +486,7 @@ class DynamicScheduler(MPIReporter):
         run_item_test(item, nextitem, session)
 
       # schedule tests to run
-
-      ## once tests are run, they will be erased from the list on the master proc
-      ## however, we need to keep the original position to send to the other procs
       items_left_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)
-
       available_procs = np.ones(n_workers, dtype=np.int8)
 
       while len(items_left_to_run) > 0:
@@ -460,9 +502,10 @@ class DynamicScheduler(MPIReporter):
 
       wait_last_tests_to_complete(items_to_run, session, available_procs, self.inter_comm)
       signal_all_done(self.inter_comm)
-    else: # worker proc
+    else: ## worker proc
       receive_run_and_report_tests(items_to_run, session, self.current_item_requests, self.global_comm, self.inter_comm)
     return True
+
 
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
@@ -479,15 +522,13 @@ class DynamicScheduler(MPIReporter):
         report._sub_comm = item._sub_comm
       else:
         report._master_running_proc = item._sub_ranks[0]
-        report.outcome = 'only_fake_run_on_master_proc' # makes PyTest NOT run the test on this proc (see _pytest/runner.py/runtestprotocol)
     else:
       report._sub_comm = item._sub_comm
 
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
-    #if report.outcome == 'skipped': # TODO does not work because skipped only in setup, (but then the others should supposed not run...=>?)
     if hasattr(report,'_mpi_skip') and report._mpi_skip:
-      self._runtest_logreport(report) # has been 'run' locally: do nothing special
+      gather_report_on_local_rank_0(report) # has been 'run' locally: do nothing special
     else:
       assert report.when == 'setup' or report.when == 'call' or report.when == 'teardown' # only know tags
       tag = WHEN_TAGS[report.when]
@@ -495,7 +536,7 @@ class DynamicScheduler(MPIReporter):
       # master ranks of each sub_comm must send their report to rank 0
       if not is_dyn_master_process(self.inter_comm):
         sub_comm = report._sub_comm
-        self._runtest_logreport(report)
+        gather_report_on_local_rank_0(report)
 
         if sub_comm.Get_rank() == 0: # if local master proc, send
           # The idea of the scheduler is the following:
