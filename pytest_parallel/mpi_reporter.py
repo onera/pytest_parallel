@@ -3,6 +3,8 @@ import pytest
 from mpi4py import MPI
 
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
+from _pytest.outcomes import Exit
+from _pytest.runner import check_interactive_exception, CallInfo
 
 from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs, is_dyn_master_process
 from .algo import partition, lower_bound
@@ -161,8 +163,62 @@ def group_items_by_parallel_steps(items, n_workers):
 
   return items_by_step, items_to_skip
 
-def run_item_test(item, nextitem, session):
-  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+def call_runtest_hook(item, when, **kwds):
+  if item._run_on_this_proc:
+    if when == "setup":
+        ihook = item.ihook.pytest_runtest_setup
+    elif when == "call":
+        ihook = item.ihook.pytest_runtest_call
+    elif when == "teardown":
+        ihook = item.ihook.pytest_runtest_teardown
+    else:
+        assert False, f"Unhandled runtest hook case: {when}"
+  else:
+    def noop(*args, **kargs): return None
+    ihook = noop
+  reraise = (Exit,)
+  if not item.config.getoption("usepdb", False):
+      reraise += (KeyboardInterrupt,)
+  return CallInfo.from_call(
+      lambda: ihook(item=item, **kwds), when=when, reraise=reraise
+  )
+def call_and_report(item, when, log: bool = True, **kwds):
+    call = call_runtest_hook(item, when, **kwds)
+    hook = item.ihook
+    report: TestReport = hook.pytest_runtest_makereport(item=item, call=call)
+    if log:
+        hook.pytest_runtest_logreport(report=report)
+    if check_interactive_exception(call, report):
+        hook.pytest_exception_interact(node=item, call=call, report=report)
+    return report
+def runtestprotocol(item, log: bool = True, nextitem = None):
+    hasrequest = hasattr(item, "_request")
+    if hasrequest and not item._request:  # type: ignore[attr-defined]
+        # This only happens if the item is re-run, as is done by
+        # pytest-rerunfailures.
+        item._initrequest()  # type: ignore[attr-defined]
+    rep = call_and_report(item, "setup", log)
+    reports = [rep]
+    if rep.passed:
+        if item.config.getoption("setupshow", False):
+            show_test_item(item)
+        if not item.config.getoption("setuponly", False):
+            reports.append(call_and_report(item, "call", log))
+    reports.append(call_and_report(item, "teardown", log, nextitem=nextitem))
+    # After all teardown hooks have been called
+    # want funcargs and request info to go away.
+    if hasrequest:
+        item._request = False  # type: ignore[attr-defined]
+        item.funcargs = None  # type: ignore[attr-defined]
+    return reports
+def runtest_protocol(item, nextitem) -> bool:
+    ihook = item.ihook
+    ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
+    runtestprotocol(item, nextitem=nextitem)
+    ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
+    return True
+def run_item_test_no_hook(item, nextitem, session):
+  runtest_protocol(item=item, nextitem=nextitem)
   if session.shouldfail:
       raise session.Failed(session.shouldfail)
   if session.shouldstop:
@@ -259,18 +315,18 @@ class StaticScheduler:
     For that, use a hookwrapper that returns `True` if the item is not supposed to run
     (by PyTest convention, returning a non-None will stop other hooks to run)
   """
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_setup(self, item):
-    if not item._run_on_this_proc: return True
-    else: yield
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_call(self, item):
-    if not item._run_on_this_proc: return True
-    else: yield
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_teardown(self, item):
-    if not item._run_on_this_proc: return True
-    else: yield
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_runtest_setup(self, item):
+  #  if not item._run_on_this_proc: return True
+  #  else: yield
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_runtest_call(self, item):
+  #  if not item._run_on_this_proc: return True
+  #  else: yield
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_runtest_teardown(self, item):
+  #  if not item._run_on_this_proc: return True
+  #  else: yield
 
 
   @pytest.mark.tryfirst
@@ -300,7 +356,7 @@ class StaticScheduler:
       # In practice though, it seems that it is not the main thing that slows things down...
 
       nextitem = None
-      run_item_test(item, nextitem, session)
+      run_item_test_no_hook(item, nextitem, session)
 
     # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
     if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
@@ -339,6 +395,13 @@ def item_with_biggest_admissible_n_proc(items, n_av_procs):
 def mark_original_index(items):
   for i, item in enumerate(items):
     item._original_index = i
+
+def run_item_test(item, nextitem, session):
+  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+  if session.shouldfail:
+      raise session.Failed(session.shouldfail)
+  if session.shouldstop:
+      raise session.Interrupted(session.shouldstop)
 
 ########### Client/Server ###########
 SCHEDULED_WORK_TAG = 0
