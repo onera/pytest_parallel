@@ -203,8 +203,8 @@ def runtestprotocol(item, cond, log: bool = True, nextitem = None):
         if item.config.getoption("setupshow", False):
             show_test_item(item)
         if not item.config.getoption("setuponly", False):
-            reports.append(call_and_report(item, "call", log))
-    reports.append(call_and_report(item, "teardown", log, nextitem=nextitem))
+            reports.append(call_and_report(item, "call", cond, log))
+    reports.append(call_and_report(item, "teardown", cond, log, nextitem=nextitem))
     # After all teardown hooks have been called
     # want funcargs and request info to go away.
     if hasrequest:
@@ -217,7 +217,7 @@ def runtest_protocol(item, nextitem, cond) -> bool:
     runtestprotocol(item, nextitem=nextitem, cond=cond)
     ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
     return True
-def run_item_test_with_condition(item, cond, nextitem, session):
+def run_item_test_with_condition(item, nextitem, session, cond):
   runtest_protocol(item=item, nextitem=nextitem, cond=cond)
   if session.shouldfail:
       raise session.Failed(session.shouldfail)
@@ -226,7 +226,10 @@ def run_item_test_with_condition(item, cond, nextitem, session):
 
 def run_item_test_no_hook(item, nextitem, session):
   cond = item._run_on_this_proc
-  return run_item_test_with_condition(item, cond, nextitem, session)
+  return run_item_test_with_condition(item, nextitem, session, cond)
+def run_item_test_no_hook2(item, nextitem, session, inter_comm):
+  cond = not is_dyn_master_process(inter_comm) or (hasattr(item,'_mpi_skip') and item._mpi_skip)
+  return run_item_test_with_condition(item, nextitem, session, cond)
 
 
 
@@ -315,12 +318,12 @@ class StaticScheduler:
         report.longrepr = mpi_report.longrepr
 
 
-  """
-    Run setup/call/teardown on `item` only if `item._run_on_this_proc` is True
+  #"""
+  #  Run setup/call/teardown on `item` only if `item._run_on_this_proc` is True
 
-    For that, use a hookwrapper that returns `True` if the item is not supposed to run
-    (by PyTest convention, returning a non-None will stop other hooks to run)
-  """
+  #  For that, use a hookwrapper that returns `True` if the item is not supposed to run
+  #  (by PyTest convention, returning a non-None will stop other hooks to run)
+  #"""
   #@pytest.hookimpl(hookwrapper=True)
   #def pytest_runtest_setup(self, item):
   #  if not item._run_on_this_proc: return True
@@ -402,13 +405,6 @@ def mark_original_index(items):
   for i, item in enumerate(items):
     item._original_index = i
 
-def run_item_test(item, nextitem, session):
-  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
-  if session.shouldfail:
-      raise session.Failed(session.shouldfail)
-  if session.shouldstop:
-      raise session.Interrupted(session.shouldstop)
-
 ########### Client/Server ###########
 SCHEDULED_WORK_TAG = 0
 WORK_DONE_TAG = 1
@@ -467,7 +463,7 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
   # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
   nextitem = None # not known at this point
-  run_item_test(item, nextitem, session)
+  run_item_test_no_hook2(item, nextitem, session, inter_comm)
 
 def wait_last_tests_to_complete(items_to_run, session, available_procs, inter_comm):
   while np.sum(available_procs) < len(available_procs):
@@ -486,7 +482,7 @@ def receive_run_and_report_tests(items_to_run, session, current_item_requests, g
     item = items_to_run[original_idx]
     item._sub_comm = sub_comm
     nextitem = None # not known at this point
-    run_item_test(item, nextitem, session)
+    run_item_test_no_hook2(item, nextitem, session, inter_comm)
 
     # signal work is done for the test
     inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
@@ -504,26 +500,26 @@ class DynamicScheduler:
     self.current_item_requests = []
 
 
-  """
-    Do not run setup/call/teardown on `item` on master (except for skip tests)
+  #"""
+  #  Do not run setup/call/teardown on `item` on master (except for skip tests)
 
-    For that, use a hookwrapper that returns `True` if the item is not supposed to run
-    (by PyTest convention, returning a non-None will stop other hooks to run)
+  #  For that, use a hookwrapper that returns `True` if the item is not supposed to run
+  #  (by PyTest convention, returning a non-None will stop other hooks to run)
 
-  """
-  #TODO special treatment of skipped test is ugly. See if we can treat them as others
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_setup(self, item):
-    if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
-    else: yield
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_call(self, item):
-    if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
-    else: yield
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_teardown(self, item):
-    if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
-    else: yield
+  #"""
+  ##TODO special treatment of skipped test is ugly. See if we can treat them as others
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_runtest_setup(self, item):
+  #  if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
+  #  else: yield
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_runtest_call(self, item):
+  #  if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
+  #  else: yield
+  #@pytest.hookimpl(hookwrapper=True)
+  #def pytest_runtest_teardown(self, item):
+  #  if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
+  #  else: yield
 
 
   @pytest.mark.tryfirst
@@ -560,7 +556,7 @@ class DynamicScheduler:
         item._sub_comm = MPI.COMM_SELF
         mark_skip(item)
         nextitem = items_to_skip[i + 1] if i + 1 < len(items_to_skip) else None
-        run_item_test(item, nextitem, session)
+        run_item_test_no_hook2(item, nextitem, session, self.inter_comm)
 
       # schedule tests to run
       items_left_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)
