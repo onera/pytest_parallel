@@ -318,26 +318,6 @@ class StaticScheduler:
         report.longrepr = mpi_report.longrepr
 
 
-  #"""
-  #  Run setup/call/teardown on `item` only if `item._run_on_this_proc` is True
-
-  #  For that, use a hookwrapper that returns `True` if the item is not supposed to run
-  #  (by PyTest convention, returning a non-None will stop other hooks to run)
-  #"""
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_runtest_setup(self, item):
-  #  if not item._run_on_this_proc: return True
-  #  else: yield
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_runtest_call(self, item):
-  #  if not item._run_on_this_proc: return True
-  #  else: yield
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_runtest_teardown(self, item):
-  #  if not item._run_on_this_proc: return True
-  #  else: yield
-
-
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
     if session.testsfailed and not session.config.option.continue_on_collection_errors:
@@ -498,28 +478,6 @@ class DynamicScheduler:
     self.global_comm = global_comm
     self.inter_comm = inter_comm
     self.current_item_requests = []
-
-
-  #"""
-  #  Do not run setup/call/teardown on `item` on master (except for skip tests)
-
-  #  For that, use a hookwrapper that returns `True` if the item is not supposed to run
-  #  (by PyTest convention, returning a non-None will stop other hooks to run)
-
-  #"""
-  ##TODO special treatment of skipped test is ugly. See if we can treat them as others
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_runtest_setup(self, item):
-  #  if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
-  #  else: yield
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_runtest_call(self, item):
-  #  if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
-  #  else: yield
-  #@pytest.hookimpl(hookwrapper=True)
-  #def pytest_runtest_teardown(self, item):
-  #  if is_dyn_master_process(self.inter_comm) and not (hasattr(item,'_mpi_skip') and item._mpi_skip): return True
-  #  else: yield
 
 
   @pytest.mark.tryfirst
