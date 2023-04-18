@@ -163,8 +163,8 @@ def group_items_by_parallel_steps(items, n_workers):
 
   return items_by_step, items_to_skip
 
-def call_runtest_hook(item, when, **kwds):
-  if item._run_on_this_proc:
+def call_runtest_hook(item, when, cond, **kwds):
+  if cond:
     if when == "setup":
         ihook = item.ihook.pytest_runtest_setup
     elif when == "call":
@@ -182,8 +182,8 @@ def call_runtest_hook(item, when, **kwds):
   return CallInfo.from_call(
       lambda: ihook(item=item, **kwds), when=when, reraise=reraise
   )
-def call_and_report(item, when, log: bool = True, **kwds):
-    call = call_runtest_hook(item, when, **kwds)
+def call_and_report(item, when, cond, log: bool = True, **kwds):
+    call = call_runtest_hook(item, when, cond, **kwds)
     hook = item.ihook
     report: TestReport = hook.pytest_runtest_makereport(item=item, call=call)
     if log:
@@ -191,13 +191,13 @@ def call_and_report(item, when, log: bool = True, **kwds):
     if check_interactive_exception(call, report):
         hook.pytest_exception_interact(node=item, call=call, report=report)
     return report
-def runtestprotocol(item, log: bool = True, nextitem = None):
+def runtestprotocol(item, cond, log: bool = True, nextitem = None):
     hasrequest = hasattr(item, "_request")
     if hasrequest and not item._request:  # type: ignore[attr-defined]
         # This only happens if the item is re-run, as is done by
         # pytest-rerunfailures.
         item._initrequest()  # type: ignore[attr-defined]
-    rep = call_and_report(item, "setup", log)
+    rep = call_and_report(item, "setup", cond, log)
     reports = [rep]
     if rep.passed:
         if item.config.getoption("setupshow", False):
@@ -211,18 +211,24 @@ def runtestprotocol(item, log: bool = True, nextitem = None):
         item._request = False  # type: ignore[attr-defined]
         item.funcargs = None  # type: ignore[attr-defined]
     return reports
-def runtest_protocol(item, nextitem) -> bool:
+def runtest_protocol(item, nextitem, cond) -> bool:
     ihook = item.ihook
     ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
-    runtestprotocol(item, nextitem=nextitem)
+    runtestprotocol(item, nextitem=nextitem, cond=cond)
     ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
     return True
-def run_item_test_no_hook(item, nextitem, session):
-  runtest_protocol(item=item, nextitem=nextitem)
+def run_item_test_with_condition(item, cond, nextitem, session):
+  runtest_protocol(item=item, nextitem=nextitem, cond=cond)
   if session.shouldfail:
       raise session.Failed(session.shouldfail)
   if session.shouldstop:
       raise session.Interrupted(session.shouldstop)
+
+def run_item_test_no_hook(item, nextitem, session):
+  cond = item._run_on_this_proc
+  return run_item_test_with_condition(item, cond, nextitem, session)
+
+
 
 def prepare_items_to_run(items, comm):
   n_rank = comm.Get_size()
