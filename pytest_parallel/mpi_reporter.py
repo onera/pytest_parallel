@@ -89,7 +89,7 @@ def filter_and_add_sub_comm(items, global_comm):
         mark_skip(item)
         filtered_items += [item]
       else:
-        item._sub_comm = MPI.COMM_NULL
+        item._sub_comm = MPI.COMM_NULL # TODO this should not be needed
     else:
       if i_rank < n_proc_test:
         color = 1
@@ -109,6 +109,19 @@ class SequentialScheduler:
   def __init__(self, global_comm):
     self.global_comm = global_comm
 
+  @pytest.mark.trylast
+  def pytest_collection_modifyitems(self, config, items):
+    items[:] = filter_and_add_sub_comm(items, self.global_comm)
+
+  @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+  def pytest_runtestloop(self, session) -> bool:
+    outcome = yield
+
+    # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
+    if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
+      session.testscollected = 1
+    return True
+
   @pytest.hookimpl(hookwrapper=True)
   def pytest_runtest_makereport(self, item):
     """
@@ -119,22 +132,9 @@ class SequentialScheduler:
     report = result.get_result()
     report._sub_comm = item._sub_comm
 
-  @pytest.mark.trylast
-  def pytest_collection_modifyitems(self, config, items):
-    items[:] = filter_and_add_sub_comm(items, self.global_comm)
-
   @pytest.mark.tryfirst
   def pytest_runtest_logreport(self, report):
     gather_report_on_local_rank_0(report)
-
-  @pytest.hookimpl(hookwrapper=True, tryfirst=True)
-  def pytest_runtestloop(self, session) -> bool:
-    outcome = yield
-
-    # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
-    if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
-      session.testscollected = 1
-    return True
 
 
 
@@ -289,35 +289,6 @@ class StaticScheduler:
   def __init__(self, global_comm):
     self.global_comm = global_comm.Dup() # ensure that all communications within the framework are private to the framework
 
-  @pytest.hookimpl(hookwrapper=True)
-  def pytest_runtest_makereport(self, item):
-    """
-      Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
-      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
-      Also, if test is not run on this proc, mark the outcome accordingly
-    """
-    result = yield
-    report = result.get_result()
-    report._sub_comm = item._sub_comm
-    report._master_running_proc = item._master_running_proc
-
-  @pytest.mark.tryfirst
-  def pytest_runtest_logreport(self, report):
-    sub_comm = report._sub_comm
-    gather_report_on_local_rank_0(report)
-
-    # master ranks of each sub_comm must send their report to rank 0
-    if sub_comm.Get_rank() == 0: # only master are concerned
-      if self.global_comm.Get_rank() != 0: # if master is not global master, send
-        self.global_comm.send(report, dest=0)
-      elif report._master_running_proc != 0: # else, recv if test run remotely
-        # In the line below, MPI.ANY_TAG will NOT clash with communications outside the framework because self.global_comm is private
-        mpi_report = self.global_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
-
-        report.outcome  = mpi_report.outcome
-        report.longrepr = mpi_report.longrepr
-
-
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
     if session.testsfailed and not session.config.option.continue_on_collection_errors:
@@ -352,8 +323,33 @@ class StaticScheduler:
       session.testscollected = 1
     return True
 
+  @pytest.hookimpl(hookwrapper=True)
+  def pytest_runtest_makereport(self, item):
+    """
+      Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
+      and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+      Also, if test is not run on this proc, mark the outcome accordingly
+    """
+    result = yield
+    report = result.get_result()
+    report._sub_comm = item._sub_comm
+    report._master_running_proc = item._master_running_proc
 
+  @pytest.mark.tryfirst
+  def pytest_runtest_logreport(self, report):
+    sub_comm = report._sub_comm
+    gather_report_on_local_rank_0(report)
 
+    # master ranks of each sub_comm must send their report to rank 0
+    if sub_comm.Get_rank() == 0: # only master are concerned
+      if self.global_comm.Get_rank() != 0: # if master is not global master, send
+        self.global_comm.send(report, dest=0)
+      elif report._master_running_proc != 0: # else, recv if test run remotely
+        # In the line below, MPI.ANY_TAG will NOT clash with communications outside the framework because self.global_comm is private
+        mpi_report = self.global_comm.recv(source=report._master_running_proc, tag=MPI.ANY_TAG)
+
+        report.outcome  = mpi_report.outcome
+        report.longrepr = mpi_report.longrepr
 
 
 
