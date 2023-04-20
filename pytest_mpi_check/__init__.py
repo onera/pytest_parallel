@@ -1,6 +1,8 @@
+"""
+  Legacy plugin
+  Delegates to the new plugin (pytest_parallel)
+"""
 __version__ = "0.1"
-
-import pytest_mpi_check.mark
 
 def assert_mpi(comm, rank, cond, *args):
   if comm.rank == rank:

@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... [\s]*collected 8 items[\s]*
+
+(?# [This is a comment until the closing parenthesis]
+    The following lines use the regex 'lookahead' mechanism to match the lines in any order
+    This is useful because schedulers may not schedule tests in the same order
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list\[1\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list\[2\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_other_pytest_deco\[2-3\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_other_pytest_deco\[2-4\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list_and_other_pytest_deco\[1-3\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list_and_other_pytest_deco\[1-4\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list_and_other_pytest_deco\[2-3\] PASSED
+)(?=.*test_parametrize.py::test_mark_mpi_decorator_with_list_and_other_pytest_deco\[2-4\] PASSED
+).*
+
+============================== 8 passed in [^\n]*s ===============================

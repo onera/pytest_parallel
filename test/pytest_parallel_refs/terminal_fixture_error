@@ -1,0 +1,23 @@
+============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... [\s]*collected 1 item[\s]*
+
+[^\n]*test_fixture_error.py::test_fixture_error ERROR
+
+==================================== ERRORS ====================================
+_____________________ ERROR at setup of test_fixture_error _____________________
+
+-------------------------------- On rank 0 of 1 --------------------------------
+    @pytest.fixture
+    def my_fixture\(\):
+>     unknown_token # <--- ERROR HERE
+E     NameError: name 'unknown_token' is not defined
+
+[^\n]*test_fixture_error.py:5: NameError
+=========================== short test summary info ============================
+ERROR [^\n]*test_fixture_error.py::test_fixture_error
+=============================== 1 error in [^\n]*s ===============================

@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform [^\n]*
+cachedir: [^\n]*
+metadata: [^\n]*
+rootdir: [^\n]*
+plugins: [^\n]*
+collecting ... [\s]*collected 2 items[\s]*
+
+[^\n]*test_two_success_tests_two_procs.py::test_success_1\[2\] SKIPPED
+[^\n]*test_two_success_tests_two_procs.py::test_success_2\[2\] SKIPPED
+
+=========================== short test summary info ============================
+SKIPPED \[1\] [^\n]*test_two_success_tests_two_procs.py:3: Not enough procs to execute: 2 required but only 1 available
+SKIPPED \[1\] [^\n]*test_two_success_tests_two_procs.py:7: Not enough procs to execute: 2 required but only 1 available
+============================== 2 skipped in [^\n]*s ==============================
