@@ -3,8 +3,6 @@ import pytest
 from mpi4py import MPI
 
 from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntry, ReprEntryNative, ReprFileLocation
-from _pytest.outcomes import Exit
-from _pytest.runner import check_interactive_exception, CallInfo
 
 from .utils import number_of_working_processes, get_n_proc_for_test, mark_skip, add_n_procs, is_dyn_master_process
 from .algo import partition, lower_bound
@@ -163,75 +161,12 @@ def group_items_by_parallel_steps(items, n_workers):
 
   return items_by_step, items_to_skip
 
-def call_runtest_hook(item, when, cond, **kwds):
-  if cond:
-    if when == "setup":
-        ihook = item.ihook.pytest_runtest_setup
-    elif when == "call":
-        ihook = item.ihook.pytest_runtest_call
-    elif when == "teardown":
-        ihook = item.ihook.pytest_runtest_teardown
-    else:
-        assert False, f"Unhandled runtest hook case: {when}"
-  else:
-    def noop(*args, **kargs): return None
-    ihook = noop
-  reraise = (Exit,)
-  if not item.config.getoption("usepdb", False):
-      reraise += (KeyboardInterrupt,)
-  return CallInfo.from_call(
-      lambda: ihook(item=item, **kwds), when=when, reraise=reraise
-  )
-def call_and_report(item, when, cond, log: bool = True, **kwds):
-    call = call_runtest_hook(item, when, cond, **kwds)
-    hook = item.ihook
-    report: TestReport = hook.pytest_runtest_makereport(item=item, call=call)
-    if log:
-        hook.pytest_runtest_logreport(report=report)
-    if check_interactive_exception(call, report):
-        hook.pytest_exception_interact(node=item, call=call, report=report)
-    return report
-def runtestprotocol(item, cond, log: bool = True, nextitem = None):
-    hasrequest = hasattr(item, "_request")
-    if hasrequest and not item._request:  # type: ignore[attr-defined]
-        # This only happens if the item is re-run, as is done by
-        # pytest-rerunfailures.
-        item._initrequest()  # type: ignore[attr-defined]
-    rep = call_and_report(item, "setup", cond, log)
-    reports = [rep]
-    if rep.passed:
-        if item.config.getoption("setupshow", False):
-            show_test_item(item)
-        if not item.config.getoption("setuponly", False):
-            reports.append(call_and_report(item, "call", cond, log))
-    reports.append(call_and_report(item, "teardown", cond, log, nextitem=nextitem))
-    # After all teardown hooks have been called
-    # want funcargs and request info to go away.
-    if hasrequest:
-        item._request = False  # type: ignore[attr-defined]
-        item.funcargs = None  # type: ignore[attr-defined]
-    return reports
-def runtest_protocol(item, nextitem, cond) -> bool:
-    ihook = item.ihook
-    ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
-    runtestprotocol(item, nextitem=nextitem, cond=cond)
-    ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
-    return True
-def run_item_test_with_condition(item, nextitem, session, cond):
-  runtest_protocol(item=item, nextitem=nextitem, cond=cond)
+def run_item_test(item, nextitem, session):
+  item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
   if session.shouldfail:
       raise session.Failed(session.shouldfail)
   if session.shouldstop:
       raise session.Interrupted(session.shouldstop)
-
-def run_item_test_no_hook(item, nextitem, session):
-  cond = item._run_on_this_proc
-  return run_item_test_with_condition(item, nextitem, session, cond)
-def run_item_test_no_hook2(item, nextitem, session, inter_comm):
-  cond = not is_dyn_master_process(inter_comm) or (hasattr(item,'_mpi_skip') and item._mpi_skip)
-  return run_item_test_with_condition(item, nextitem, session, cond)
-
-
 
 def prepare_items_to_run(items, comm):
   n_rank = comm.Get_size()
@@ -290,6 +225,11 @@ class StaticScheduler:
     self.global_comm = global_comm.Dup() # ensure that all communications within the framework are private to the framework
 
   @pytest.mark.tryfirst
+  def pytest_pyfunc_call(self, pyfuncitem):
+    if not pyfuncitem._run_on_this_proc:
+      return True # for this hook, `firstresult=True` so returning a non-None will stop other hooks to run
+
+  @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
     if session.testsfailed and not session.config.option.continue_on_collection_errors:
       raise session.Interrupted(
@@ -316,7 +256,7 @@ class StaticScheduler:
       # In practice though, it seems that it is not the main thing that slows things down...
 
       nextitem = None
-      run_item_test_no_hook(item, nextitem, session)
+      run_item_test(item, nextitem, session)
 
     # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
     if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
@@ -439,7 +379,7 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
   # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
   nextitem = None # not known at this point
-  run_item_test_no_hook2(item, nextitem, session, inter_comm)
+  run_item_test(item, nextitem, session)
 
 def wait_last_tests_to_complete(items_to_run, session, available_procs, inter_comm):
   while np.sum(available_procs) < len(available_procs):
@@ -458,7 +398,7 @@ def receive_run_and_report_tests(items_to_run, session, current_item_requests, g
     item = items_to_run[original_idx]
     item._sub_comm = sub_comm
     nextitem = None # not known at this point
-    run_item_test_no_hook2(item, nextitem, session, inter_comm)
+    run_item_test(item, nextitem, session)
 
     # signal work is done for the test
     inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
@@ -475,6 +415,11 @@ class DynamicScheduler:
     self.inter_comm = inter_comm
     self.current_item_requests = []
 
+  @pytest.mark.tryfirst
+  def pytest_pyfunc_call(self, pyfuncitem):
+    cond = is_dyn_master_process(self.inter_comm) and not (hasattr(pyfuncitem,'_mpi_skip') and pyfuncitem._mpi_skip)
+    if cond:
+      return True # for this hook, `firstresult=True` so returning a non-None will stop other hooks to run
 
   @pytest.mark.tryfirst
   def pytest_runtestloop(self, session) -> bool:
@@ -510,7 +455,7 @@ class DynamicScheduler:
         item._sub_comm = MPI.COMM_SELF
         mark_skip(item)
         nextitem = items_to_skip[i + 1] if i + 1 < len(items_to_skip) else None
-        run_item_test_no_hook2(item, nextitem, session, self.inter_comm)
+        run_item_test(item, nextitem, session)
 
       # schedule tests to run
       items_left_to_run = sorted(items_to_run, key=lambda item: item._n_mpi_proc)

@@ -146,3 +146,13 @@ PyTest expects its complete "pipeline" to be executed for all messages to be rep
 For the static and dynamic schedulers, on the master process, we must execute the test protocol, while not really running the test if it was scheduled on a remote process.
 
 This can be done by hooking `pytest_runtest_setup/call/teardown`. However, we observed it was greatly degrading performance (x5 !), so instead we just copy-pasted the `_pytest/runner/pytest_runtest_protocol` and hard-coded the execution shortcut.
+
+
+## TODO ##
+
+* Binding
+* Reserve more procs than declared in the test. Useful for loading and scaling performance tests.
+```Python
+@pytest_parallel.mark.parallel(4, exclusive_numa_domain='cpu')
+```
+* Dynamic scheduler: more asynchrony (send -> isend)
