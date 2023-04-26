@@ -17,7 +17,7 @@ def pytest_addoption(parser):
         default="sequential",
     )
 
-
+## TODO move to fixtures.py
 @pytest.fixture
 def comm(request):
     """
@@ -36,7 +36,7 @@ def sub_comm(request):
 
 
 # --------------------------------------------------------------------------
-@pytest.mark.trylast
+@pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     global_comm = MPI.COMM_WORLD
 

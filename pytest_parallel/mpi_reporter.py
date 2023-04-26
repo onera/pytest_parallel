@@ -126,7 +126,7 @@ class SequentialScheduler:
     def __init__(self, global_comm):
         self.global_comm = global_comm
 
-    @pytest.mark.trylast
+    @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, config, items):
         items[:] = filter_and_add_sub_comm(items, self.global_comm)
 
@@ -149,7 +149,7 @@ class SequentialScheduler:
         report = result.get_result()
         report._sub_comm = item._sub_comm
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_logreport(self, report):
         gather_report_on_local_rank_0(report)
 
@@ -247,12 +247,12 @@ class StaticScheduler:
             global_comm.Dup()
         )  # ensure that all communications within the framework are private to the framework
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
         if not pyfuncitem._run_on_this_proc:
             return True  # for this hook, `firstresult=True` so returning a non-None will stop other hooks to run
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
         if (
             session.testsfailed
@@ -305,7 +305,7 @@ class StaticScheduler:
         report._sub_comm = item._sub_comm
         report._master_running_proc = item._master_running_proc
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_logreport(self, report):
         sub_comm = report._sub_comm
         gather_report_on_local_rank_0(report)
@@ -471,7 +471,7 @@ class DynamicScheduler:
         self.inter_comm = inter_comm
         self.current_item_requests = []
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
         cond = is_dyn_master_process(self.inter_comm) and not (
             hasattr(pyfuncitem, "_mpi_skip") and pyfuncitem._mpi_skip
@@ -479,7 +479,7 @@ class DynamicScheduler:
         if cond:
             return True  # for this hook, `firstresult=True` so returning a non-None will stop other hooks to run
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
         # same begining as PyTest default's
         if (
@@ -571,7 +571,7 @@ class DynamicScheduler:
         else:
             report._sub_comm = item._sub_comm
 
-    @pytest.mark.tryfirst
+    @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_logreport(self, report):
         if hasattr(report, "_mpi_skip") and report._mpi_skip:
             gather_report_on_local_rank_0(
