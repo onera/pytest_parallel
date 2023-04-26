@@ -2,7 +2,7 @@ import pytest
 
 
 def parallel(n_proc_list):
-  """
+    """
     @pytest_parallel.mark.parallel([2,3])
     def test_fun(comm):
       pass
@@ -29,12 +29,13 @@ def parallel(n_proc_list):
             With `indirect=['comm']`, we tell PyTest to use fixture `comm` to compute the argument we want to use in the function body
 
 
-  """
-  if isinstance(n_proc_list, int):
-    n_proc_list = [n_proc_list] # One integer `i` is considered equivalent to `[i]`
+    """
+    if isinstance(n_proc_list, int):
+        n_proc_list = [n_proc_list]  # One integer `i` is considered equivalent to `[i]`
 
-  def parallel_impl(tested_fun):
-    return pytest.mark.parametrize('comm', n_proc_list, indirect=['comm']) (
-             (tested_fun)
-           )
-  return parallel_impl
+    def parallel_impl(tested_fun):
+        return pytest.mark.parametrize("comm", n_proc_list, indirect=["comm"])(
+            (tested_fun)
+        )
+
+    return parallel_impl
