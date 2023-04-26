@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [dev*, master]
+  pull_request:
+    branches:
+      - master
+
+# A workflow run is made up of one or more jobs that
+# can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        py-version:
+          - "3.8"
+          - "3.9"
+          - "3.10"
+          - "3.11"
+        py-arch:
+          - x64
+        mpi:
+          - mpich
+          - openmpi
+          - intelmpi
+        os:
+          - ubuntu-latest
+          - macos-latest
+        exclude:
+          - os: macos-latest
+            mpi: intelmpi
+    name: ${{ matrix.mpi }} - ${{matrix.py-version}} - ${{matrix.os}}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Use Python
+        uses: actions/setup-python@v4
+        with: 
+          python-version: ${{ matrix.py-version }}
+      - name: Setup MPI
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: ${{ matrix.mpi }}
+      - run: pip install .
+      # MPI parallel testing
+      - run: python -m pytest ./test/test_pytest_parallel.py
+      # Unit testing
+      - run: python -m pytest ./pytest_parallel/test
+
+      

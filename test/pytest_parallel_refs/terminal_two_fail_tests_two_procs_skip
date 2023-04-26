@@ -1,13 +1,13 @@
 ============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
-metadata: [^\n]*
+?(metadata: [^\n]*)?
 rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... [\s]*collected 2 items[\s]*
 
-[^\n]*test_two_fail_tests_two_procs.py::test_fail_1\[2\] SKIPPED
-[^\n]*test_two_fail_tests_two_procs.py::test_fail_2\[2\] SKIPPED
+[^\n]*test_two_fail_tests_two_procs.py::test_fail_1\[2\] SKIPPED[^\n]*
+[^\n]*test_two_fail_tests_two_procs.py::test_fail_2\[2\] SKIPPED[^\n]*
 
 =========================== short test summary info ============================
 SKIPPED \[1\] [^\n]*test_two_fail_tests_two_procs.py:3: Not enough procs to execute: 2 required but only 1 available

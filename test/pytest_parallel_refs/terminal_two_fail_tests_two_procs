@@ -1,7 +1,7 @@
 ============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
-metadata: [^\n]*
+?(metadata: [^\n]*)?
 rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... [\s]*collected 2 items[\s]*
@@ -58,7 +58,7 @@ E     assert 0
 [^\n]*test_two_fail_tests_two_procs.py:9: AssertionError
 ).*
 =========================== short test summary info ============================
-(?=.*FAILED [^\n]*test_two_fail_tests_two_procs.py::test_fail_1\[2\]
-)(?=.*FAILED [^\n]*test_two_fail_tests_two_procs.py::test_fail_2\[2\]
+(?=.*FAILED [^\n]*test_two_fail_tests_two_procs.py::test_fail_1\[2\][^\n]*
+)(?=.*FAILED [^\n]*test_two_fail_tests_two_procs.py::test_fail_2\[2\][^\n]*
 ).*
 ============================== 2 failed in [^\n]*s ===============================

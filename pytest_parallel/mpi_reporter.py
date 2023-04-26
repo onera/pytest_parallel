@@ -311,10 +311,15 @@ def item_with_biggest_admissible_n_proc(items, n_av_procs):
   # among those, we favor the first in the array for 'stability' reasons (no reordering when not needed)
   idx = lower_bound(items, n_av_procs, key)
   if idx==0 and items[idx]._n_mpi_proc>n_av_procs: idx = -1 # return -1 if all items ask too much
+  if idx==0:
+    idx = list([item._n_mpi_proc for item in items]).count(items[0]._n_mpi_proc) - 1
+  elif idx>0 and idx<len(items) and items[idx]._n_mpi_proc != n_av_procs:
+    idx = idx - 1
   if idx==len(items): # more than enough available procs
     # Here items[-1] would be OK, but prefer the first item with the same _n_mpi_procs
     max_needed_n_proc = items[-1]._n_mpi_proc
     idx = lower_bound(items, max_needed_n_proc, key)
+ 
   return idx
 
 def mark_original_index(items):

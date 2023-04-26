@@ -1,7 +1,7 @@
 ============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
-metadata: [^\n]*
+?(metadata: [^\n]*)?
 rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... [\s]*collected 2 items[\s]*
@@ -23,5 +23,5 @@ E     assert 0
 
 [^\n]*test_seq.py:5: AssertionError
 =========================== short test summary info ============================
-FAILED [^\n]*/test_seq.py::test_false
+FAILED [^\n]*/test_seq.py::test_false[^\n]*
 ========================= 1 failed, 1 passed in [^\n]*s ==========================

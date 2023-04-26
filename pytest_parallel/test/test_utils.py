@@ -1,4 +1,4 @@
-from pytest_parallel.mpi_reporter import group_items_by_parallel_steps
+from pytest_parallel.mpi_reporter import group_items_by_parallel_steps, item_with_biggest_admissible_n_proc
 
 class callspec_mock:
   def __init__(self, n_procs):
@@ -32,12 +32,12 @@ def test_group_items_by_parallel_steps():
 
 
 
-class item_mock:
+class item_mock_admit:
   def __init__(self, n_proc):
     self._n_mpi_proc = n_proc
 
 def test_item_with_biggest_admissible_n_proc():
-  items = [item_mock(1),item_mock(1),item_mock(2),item_mock(4)]
+  items = [item_mock_admit(1),item_mock_admit(1),item_mock_admit(2),item_mock_admit(4)]
 
   assert item_with_biggest_admissible_n_proc(items, 0) == -1
   assert item_with_biggest_admissible_n_proc(items, 1) == 1 # 0 would have worked too

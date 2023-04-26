@@ -1,7 +1,7 @@
 ============================= test session starts ==============================
 platform [^\n]*
 cachedir: [^\n]*
-metadata: [^\n]*
+?(metadata: [^\n]*)?
 rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... [\s]*collected 2 items[\s]*
