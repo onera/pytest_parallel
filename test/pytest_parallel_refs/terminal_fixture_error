@@ -17,7 +17,7 @@ _____________________ ERROR at setup of test_fixture_error _____________________
 >     unknown_token # <--- ERROR HERE
 E     NameError: name 'unknown_token' is not defined
 
-[^\n]*test_fixture_error.py:5: NameError
+[^\n]*test_fixture_error.py:6: NameError
 =========================== short test summary info ============================
 ERROR [^\n]*test_fixture_error.py::test_fixture_error[^\n]*
 =============================== 1 error in [^\n]*s ===============================

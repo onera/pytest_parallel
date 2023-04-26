@@ -24,7 +24,7 @@ comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 >     assert 0
 E     assert 0
 
-[^\n]*test_two_success_fail_tests_two_procs.py:9: AssertionError
+[^\n]*test_two_success_fail_tests_two_procs.py:11: AssertionError
 
 -------------------------------- On rank 1 of 2 --------------------------------
 comm = <mpi4py.MPI.Intracomm object at [^\n]*>
@@ -34,7 +34,7 @@ comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 >     assert 0
 E     assert 0
 
-[^\n]*test_two_success_fail_tests_two_procs.py:9: AssertionError
+[^\n]*test_two_success_fail_tests_two_procs.py:11: AssertionError
 =========================== short test summary info ============================
 FAILED [^\n]*test_two_success_fail_tests_two_procs.py::test_fail_2\[2\][^\n]*
 ========================= 1 failed, 1 passed in [^\n]*s ==========================

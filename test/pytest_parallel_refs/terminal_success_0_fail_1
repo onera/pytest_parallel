@@ -19,7 +19,7 @@ comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 >     if comm.Get_rank\(\)==0: assert 0
 E     assert 0
 
-[^\n]*test_success_0_fail_1.py:5: AssertionError
+[^\n]*test_success_0_fail_1.py:6: AssertionError
 =========================== short test summary info ============================
 FAILED [^\n]*test_success_0_fail_1.py::test_fail_one_rank\[2\][^\n]*
 ============================== 1 failed in [^\n]*s ===============================

@@ -21,7 +21,7 @@ __________________________________ test_false __________________________________
 >     assert 0
 E     assert 0
 
-[^\n]*test_seq.py:5: AssertionError
+[^\n]*test_seq.py:6: AssertionError
 =========================== short test summary info ============================
 FAILED [^\n]*/test_seq.py::test_false[^\n]*
 ========================= 1 failed, 1 passed in [^\n]*s ==========================

@@ -24,7 +24,7 @@ comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 >     assert 0
 E     assert 0
 
-[^\n]*test_two_fail_tests_one_proc.py:5: AssertionError
+[^\n]*test_two_fail_tests_one_proc.py:6: AssertionError
 )(?=.*________________________________ test_fail_2\[1\] ________________________________
 
 -------------------------------- On rank 0 of 1 --------------------------------
@@ -35,7 +35,7 @@ comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 >     assert 0
 E     assert 0
 
-[^\n]*test_two_fail_tests_one_proc.py:9: AssertionError
+[^\n]*test_two_fail_tests_one_proc.py:11: AssertionError
 ).*
 =========================== short test summary info ============================
 (?=.*FAILED [^\n]*test_two_fail_tests_one_proc.py::test_fail_1\[1\][^\n]*
