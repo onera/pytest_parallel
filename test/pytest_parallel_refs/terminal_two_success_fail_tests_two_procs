@@ -1,4 +1,4 @@
-============================= test session starts ==============================
+[=]+ test session starts [=]+
 platform [^\n]*
 cachedir: [^\n]*
 ?(metadata: [^\n]*)?
@@ -13,28 +13,28 @@ collecting ... [\s]*collected 2 items[\s]*
 )(?=.*test_two_success_fail_tests_two_procs.py::test_fail_2\[2\] FAILED
 ).*
 
-=================================== FAILURES ===================================
-________________________________ test_fail_2\[2\] ________________________________
+[=]+ FAILURES [=]+
+[_]+ test_fail_2\[2\] [_]+
 
--------------------------------- On rank 0 of 2 --------------------------------
+[-]+ On rank 0 of 2 [-]+
 comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 
     @pytest_parallel.mark.parallel\(2\)
     def test_fail_2\(comm\):
->     assert 0
-E     assert 0
+>       assert 0
+E       assert 0
 
 [^\n]*test_two_success_fail_tests_two_procs.py:11: AssertionError
 
--------------------------------- On rank 1 of 2 --------------------------------
+[-]+ On rank 1 of 2 [-]+
 comm = <mpi4py.MPI.Intracomm object at [^\n]*>
 
     @pytest_parallel.mark.parallel\(2\)
     def test_fail_2\(comm\):
->     assert 0
-E     assert 0
+>       assert 0
+E       assert 0
 
 [^\n]*test_two_success_fail_tests_two_procs.py:11: AssertionError
-=========================== short test summary info ============================
+[=]+ short test summary info [=]+
 FAILED [^\n]*test_two_success_fail_tests_two_procs.py::test_fail_2\[2\][^\n]*
-========================= 1 failed, 1 passed in [^\n]*s ==========================
+[=]+ 1 failed, 1 passed in [^\n]*s [=]+

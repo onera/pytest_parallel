@@ -10,8 +10,27 @@ on:
 # A workflow run is made up of one or more jobs that
 # can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
+  pylint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: mpi4py/setup-mpi@v1
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pylint==2.14.5 pytest
+        python setup.py egg_info
+        pip install -r *.egg-info/requires.txt
+    - name: Analysing the code with pylint
+      run: |
+        pylint --unsafe-load-any-extension=y --disable=fixme $(git ls-files '*.py') || true
+
   build:
+    needs: [pylint]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -27,12 +46,24 @@ jobs:
           - mpich
           - openmpi
           - intelmpi
+          - msmpi
         os:
           - ubuntu-latest
           - macos-latest
+          - windows-2022
         exclude:
           - os: macos-latest
             mpi: intelmpi
+          - os: macos-latest
+            mpi: msmpi
+          - os:  windows-2022
+            mpi: mpich
+          - os:  windows-2022
+            mpi: openmpi
+          - os:  windows-2022
+            mpi: intelmpi
+          - os: ubuntu-latest
+            mpi: msmpi
     name: ${{ matrix.mpi }} - ${{matrix.py-version}} - ${{matrix.os}}
     steps:
       - name: Checkout

@@ -31,12 +31,14 @@ Path.mkdir(stderr_dir, exist_ok=True)
 
 def ref_match(filename):
     template_path = refs_dir / filename
-    with open(template_path, "r") as f:
+    with open(template_path, "r", encoding="utf-8") as f:
         ref_regex = f.read()
     output_path = output_dir / filename
-    with open(output_path, "r") as f:
+    with open(output_path, "r", encoding="utf-8") as f:
         result = f.read()
-
+    if not re.search(ref_regex, result, flags=re.DOTALL):
+        print("ref: ", ref_regex)
+        print("outfile: ", result)
     return re.search(ref_regex, result, flags=re.DOTALL)
 
 
@@ -60,13 +62,13 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     # cmd  = f'export PYTEST_PLUGINS=pytest_parallel.plugin\n' # re-enable the plugin when we execute the command
     # cmd += f'mpirun -np {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}'
     cmd = f"mpiexec -n {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
-    subprocess.run(cmd, shell=True, env=test_env)
+    subprocess.run(cmd, shell=True, text=True, env=test_env)
     captured = capfd.readouterr()
-    with open(output_file_path, "w", encoding="utf-8") as f:
+    with open(output_file_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(captured.out)
     if not ref_match(output_file_name):
         print("err: ", captured.err)
-        print("out: ", captured.out)
+        print("out: ", captured.out.replace(os.linesep, '\n'))
     assert ref_match(output_file_name)
     # cmd += f' > {output_file_path}  2> {stderr_file_path}' # redirections. stderr is actually not very useful (since the tests errors are reported in stdout by PyTest)
 

@@ -1,4 +1,4 @@
-============================= test session starts ==============================
+[=]+ test session starts [=]+
 platform [^\n]*
 cachedir: [^\n]*
 ?(metadata: [^\n]*)?
@@ -8,16 +8,16 @@ collecting ... [\s]*collected 1 item[\s]*
 
 [^\n]*test_fixture_error.py::test_fixture_error ERROR
 
-==================================== ERRORS ====================================
-_____________________ ERROR at setup of test_fixture_error _____________________
+[=]+ ERRORS [=]+
+[_]+ ERROR at setup of test_fixture_error [_]+
 
--------------------------------- On rank 0 of 1 --------------------------------
+[-]+ On rank 0 of 1 [-]+
     @pytest.fixture
     def my_fixture\(\):
->     unknown_token # <--- ERROR HERE
-E     NameError: name 'unknown_token' is not defined
+>       unknown_token  # <--- ERROR HERE
+E       NameError: name 'unknown_token' is not defined
 
 [^\n]*test_fixture_error.py:6: NameError
-=========================== short test summary info ============================
+[=]+ short test summary info [=]+
 ERROR [^\n]*test_fixture_error.py::test_fixture_error[^\n]*
-=============================== 1 error in [^\n]*s ===============================
+[=]+ 1 error in [^\n]*s [=]+
