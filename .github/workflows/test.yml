@@ -64,6 +64,12 @@ jobs:
             mpi: intelmpi
           - os: ubuntu-latest
             mpi: msmpi
+          - os: ubuntu-latest
+            py-version: 3.8
+            mpi: mpich
+          - os: ubuntu-latest
+            py-version: 3.9
+            mpi: mpich
     name: ${{ matrix.mpi }} - ${{matrix.py-version}} - ${{matrix.os}}
     steps:
       - name: Checkout
