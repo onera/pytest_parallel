@@ -9,6 +9,7 @@
   (but of course its tests will in turn run tests with pytest_parallel enabled)
 """
 import os
+impotr sys
 
 assert "pytest_parallel.plugin" not in os.getenv(
     "PYTEST_PLUGINS", default=[]
