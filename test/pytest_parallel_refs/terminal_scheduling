@@ -1,7 +1,7 @@
-============================= test session starts ==============================
+[=]+ test session starts [=]+
 platform [^\n]*
 cachedir: [^\n]*
-metadata: [^\n]*
+?(metadata: [^\n]*)?
 rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... [\s]*collected 8 items[\s]*
@@ -19,4 +19,4 @@ collecting ... [\s]*collected 8 items[\s]*
 )(?=.*test_scheduling.py::test_7\[2\] PASSED
 ).*
 
-============================== 8 passed in [^\n]*s ===============================
+[=]+ 8 passed in [^\n]*s [=]+

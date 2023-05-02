@@ -1,7 +1,7 @@
-============================= test session starts ==============================
+[=]+ test session starts [=]+
 platform [^\n]*
 cachedir: [^\n]*
-metadata: [^\n]*
+?(metadata: [^\n]*)?
 rootdir: [^\n]*
 plugins: [^\n]*
 collecting ... [\s]*collected 2 items[\s]*
@@ -13,15 +13,15 @@ collecting ... [\s]*collected 2 items[\s]*
 )(?=.*test_seq.py::test_false FAILED
 ).*
 
-=================================== FAILURES ===================================
-__________________________________ test_false __________________________________
+[=]+ FAILURES [=]+=
+[_]+ test_false [_]+
 
--------------------------------- On rank 0 of 1 --------------------------------
+[-]+ On rank 0 of 1 [-]+
     def test_false\(\):
->     assert 0
-E     assert 0
+>       assert 0
+E       assert 0
 
-[^\n]*test_seq.py:5: AssertionError
-=========================== short test summary info ============================
-FAILED [^\n]*/test_seq.py::test_false
-========================= 1 failed, 1 passed in [^\n]*s ==========================
+[^\n]*test_seq.py:6: AssertionError
+[=]+ short test summary info [=]+
+FAILED [^\n]*/test_seq.py::test_false[^\n]*
+[=]+ 1 failed, 1 passed in [^\n]*s [=]+

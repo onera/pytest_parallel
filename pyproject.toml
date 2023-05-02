@@ -1,0 +1,65 @@
+[build-system]
+requires = [
+    "setuptools",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["pytest_mpi_check"]
+namespaces = false
+
+[project]
+name = "pytest_parallel"
+description = "Plugin to manage test in distributed way with MPI Standard"
+readme = "README.md"
+authors = [
+    {name = "Bruno Maugars", email = "bruno.maugars@onera.fr"},
+    {name = "Berenger Berthoul", email = "berenger.berthoul@onera.fr"},
+]
+maintainers = [
+    {name = "Bruno Maugars", email = "bruno.maugars@onera.fr"},
+]
+license = {text = "Mozilla Public License 2.0"}
+keywords = [
+  "pytest",
+  "report",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Operating System :: Unix",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pytest>=6.2.5",
+    "mpi4py",
+    "numpy",
+]
+version = "1.0.0"
+
+[project.urls]
+Homepage = "https://github.com/onera/pytest_parallel"
+Source = "https://github.com/onera/pytest_parallel"
+Documentation = "https://github.com/onera/pytest_parallel"
+"Release notes" = "https://github.com/onera/pytest_parallel/releases"
+
+[project.entry-points.pytest11]
+parallel = "pytest_parallel.plugin"
+parallel_fixtures = "pytest_parallel.fixtures"
