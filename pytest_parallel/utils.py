@@ -64,9 +64,14 @@ def is_master_process(comm, scheduler):
 def spawn_master_process(global_comm):
     if not is_dyn_master_process(global_comm):
         error_codes = []
-        inter_comm = global_comm.Spawn(
-            sys.argv[0], args=sys.argv[1:], maxprocs=1, errcodes=error_codes
-        )
+        if sys.argv[0].endswith(".py"):
+            inter_comm = global_comm.Spawn(
+                sys.executable, args=sys.argv, maxprocs=1, errcodes=error_codes
+            )
+        else:
+            inter_comm = global_comm.Spawn(
+                sys.argv[0], args=sys.argv[1:], maxprocs=1, errcodes=error_codes
+            )
         for error_code in error_codes:
             if error_code != 0:
                 assert 0
