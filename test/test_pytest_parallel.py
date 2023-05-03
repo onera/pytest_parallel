@@ -69,13 +69,17 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
         f.write(captured.out)
     if not ref_match(output_file_name):
         print("err: ", captured.err)
-        print("out: ", captured.out.replace(os.linesep, '\n'))
+        print("out: ", captured.out.replace(os.linesep, "\n"))
     assert ref_match(output_file_name)
     # cmd += f' > {output_file_path}  2> {stderr_file_path}' # redirections. stderr is actually not very useful (since the tests errors are reported in stdout by PyTest)
 
 
-param_scheduler = ["sequential", "static", "dynamic"] if sys.platform != "win32" else ["sequential", "static"]
-    
+param_scheduler = (
+    ["sequential", "static", "dynamic"]
+    if sys.platform != "win32"
+    else ["sequential", "static"]
+)
+
 
 @pytest.mark.parametrize("scheduler", param_scheduler)
 class TestPytestParallel:
