@@ -51,14 +51,14 @@ class item_mock_admit:
 
 def test_item_with_biggest_admissible_n_proc():
     items = [
-        item_mock_admit(1),
-        item_mock_admit(1),
-        item_mock_admit(2),
-        item_mock_admit(4),
+        item_mock_admit(1), # 0
+        item_mock_admit(1), # 1
+        item_mock_admit(2), # 2
+        item_mock_admit(4), # 3
     ]
 
     assert item_with_biggest_admissible_n_proc(items, 0) == -1
-    assert item_with_biggest_admissible_n_proc(items, 1) == 1  # 0 would have worked too
+    assert item_with_biggest_admissible_n_proc(items, 1) == 0  # 1 would have worked too, but we prefer the first one
     assert item_with_biggest_admissible_n_proc(items, 2) == 2
     assert item_with_biggest_admissible_n_proc(items, 3) == 2
     assert item_with_biggest_admissible_n_proc(items, 4) == 3
