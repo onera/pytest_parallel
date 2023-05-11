@@ -85,7 +85,7 @@ param_scheduler = (
     else ["sequential", "static"]
 )
 
-
+# fmt: off
 @pytest.mark.parametrize("scheduler", param_scheduler)
 class TestPytestParallel:
     def test_00(self, scheduler, capfd): run_pytest_parallel_test('seq'                             , 1, scheduler, capfd)
@@ -116,7 +116,7 @@ class TestPytestParallel:
     def test_18(self, scheduler, capfd): run_pytest_parallel_test('parametrize'                     , 2, scheduler, capfd) # check the parametrize API 
   
     def test_19(self, scheduler, capfd): run_pytest_parallel_test('scheduling'                      , 4, scheduler, capfd) # check 'real' case
-
+# fmt: on
 
 ## If one test fail, it may be useful to debug regex matching along the following lines
 # test = 'two_fail_tests_one_proc'
