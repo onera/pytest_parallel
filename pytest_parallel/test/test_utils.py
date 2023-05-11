@@ -4,22 +4,20 @@ from pytest_parallel.mpi_reporter import (
 )
 
 
-class callspec_mock:
-    def __init__(self, n_procs):
-        self.n_procs = n_procs
-
-    def getparam(self, s):
-        assert s == "comm"
-        return self.n_procs
-
-
-class item_mock:
-    def __init__(self, name, n_procs):
-        self.name = name
-        self.callspec = callspec_mock(n_procs)
-
-
 def test_group_items_by_parallel_steps():
+    class callspec_mock:
+        def __init__(self, n_procs):
+            self.n_procs = n_procs
+
+        def getparam(self, s):
+            assert s == "comm"
+            return self.n_procs
+
+    class item_mock:
+        def __init__(self, name, n_procs):
+            self.name = name
+            self.callspec = callspec_mock(n_procs)
+
     n_workers = 4
     items = [
         item_mock("a", 2),
@@ -44,17 +42,16 @@ def test_group_items_by_parallel_steps():
     assert items_to_skip[0].name == "d"
 
 
-class item_mock_admit:
-    def __init__(self, n_proc):
-        self.n_procs = n_proc
-
-
 def test_item_with_biggest_admissible_n_proc():
+    class item_mock:
+        def __init__(self, n_proc):
+            self.n_procs = n_proc
+
     items = [
-        item_mock_admit(1),  # 0
-        item_mock_admit(1),  # 1
-        item_mock_admit(2),  # 2
-        item_mock_admit(4),  # 3
+        item_mock(1),  # 0
+        item_mock(1),  # 1
+        item_mock(2),  # 2
+        item_mock(4),  # 3
     ]
 
     assert item_with_biggest_admissible_n_proc(items, 0) == -1
