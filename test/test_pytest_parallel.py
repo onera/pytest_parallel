@@ -56,10 +56,11 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, pytestconfi
     stderr_file_path.unlink(missing_ok=True)
 
     test_env = os.environ.copy()
-    optional_plugin_load = "-p pytest_parallel.plugin" if check_env_plugin(pytestconfig) else ""
+    if check_env_plugin(pytestconfig):
+        test_env["PYTEST_PLUGINS"] = "pytest_parallel.plugin"        
     # cmd  = f'export PYTEST_PLUGINS=pytest_parallel.plugin\n' # re-enable the plugin when we execute the command
     # cmd += f'mpirun -np {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}'
-    cmd = f"mpiexec -n {n_workers} pytest {optional_plugin_load} -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
+    cmd = f"mpiexec -n {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
     subprocess.run(cmd, shell=True, text=True, env=test_env)
     captured = capfd.readouterr()
     with open(output_file_path, "w", encoding="utf-8", newline="\n") as f:
