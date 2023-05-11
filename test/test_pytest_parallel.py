@@ -57,7 +57,8 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, pytestconfi
 
     test_env = os.environ.copy()
     if check_env_plugin(pytestconfig):
-        test_env["PYTEST_PLUGINS"] = "pytest_parallel.plugin"        
+        test_env["PYTEST_PLUGINS"] = "pytest_parallel.plugin"
+    test_env.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
     # cmd  = f'export PYTEST_PLUGINS=pytest_parallel.plugin\n' # re-enable the plugin when we execute the command
     # cmd += f'mpirun -np {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}'
     cmd = f"mpiexec -n {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
