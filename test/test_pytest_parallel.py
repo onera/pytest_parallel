@@ -17,9 +17,9 @@ assert "pytest_parallel.plugin" not in os.getenv(
 # it will be plugged in by the framework when needed
 
 import re
-import pytest
-from pathlib import Path
 import subprocess
+from pathlib import Path
+import pytest
 
 root_dir = Path(__file__).parent
 tests_dir = root_dir / "pytest_parallel_tests"
