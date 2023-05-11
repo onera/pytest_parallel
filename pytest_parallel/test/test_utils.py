@@ -6,12 +6,12 @@ from pytest_parallel.mpi_reporter import (
 
 def test_group_items_by_parallel_steps():
     class callspec_mock:
-        def __init__(self, n_procs):
-            self.n_procs = n_procs
+        def __init__(self, n_proc):
+            self.n_proc = n_proc
 
         def getparam(self, s):
             assert s == "comm"
-            return self.n_procs
+            return self.n_proc
 
     class item_mock:
         def __init__(self, name, n_procs):
@@ -45,7 +45,7 @@ def test_group_items_by_parallel_steps():
 def test_item_with_biggest_admissible_n_proc():
     class item_mock:
         def __init__(self, n_proc):
-            self.n_procs = n_proc
+            self.n_proc = n_proc
 
     items = [
         item_mock(1),  # 0

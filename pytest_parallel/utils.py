@@ -36,7 +36,7 @@ def get_n_proc_for_test(item: Item) -> int:
 
 def add_n_procs(items):
     for item in items:
-        item.n_procs = get_n_proc_for_test(item)
+        item.n_proc = get_n_proc_for_test(item)
 
 
 def mark_skip(item):

@@ -4,15 +4,15 @@
 import operator
 
 
-def identity(x):
-    return x
+def identity(elem):
+    return elem
 
 
-def partition(xs, pred):
+def partition(seq, pred):
     """
-    partitions sequence `xs` into
-      `xs_true`  with elements of `xs` that       satisfy predicate `pred`
-      `xs_false` with elements of `xs` that don't satisfy predicate `pred`
+    partitions sequence `seq` into
+      `xs_true`  with elements of `seq` that       satisfy predicate `pred`
+      `xs_false` with elements of `seq` that don't satisfy predicate `pred`
     then returns `xs_true`, `xs_false`
 
     Complexity:
@@ -25,15 +25,15 @@ def partition(xs, pred):
     """
     xs_true = []
     xs_false = []
-    for x in xs:
-        if pred(x):
-            xs_true.append(x)
+    for elem in seq:
+        if pred(elem):
+            xs_true.append(elem)
         else:
-            xs_false.append(x)
+            xs_false.append(elem)
     return xs_true, xs_false
 
 
-def partition_point(xs, pred):
+def partition_point(seq, pred):
     """
     Gives the partition point of sequence `xs`
     That is, the index i where
@@ -52,25 +52,25 @@ def partition_point(xs, pred):
         Constant
     """
     i = 0
-    j = len(xs)
+    j = len(seq)
     while i < j:
         mid = (i + j) // 2
-        if pred(xs[mid]):
+        if pred(seq[mid]):
             i = mid + 1
         else:
             j = mid
     return i
 
 
-def lower_bound(xs, value, key=identity, comp=operator.lt):
-    def pred(x):
-        return comp(key(x), value)
+def lower_bound(seq, value, key=identity, comp=operator.lt):
+    def pred(elem):
+        return comp(key(elem), value)
 
-    return partition_point(xs, pred)
+    return partition_point(seq, pred)
 
 
-def upper_bound(xs, value, key=identity, comp=operator.lt):
-    def pred(x):
-        return not comp(value, key(x))
+def upper_bound(seq, value, key=identity, comp=operator.lt):
+    def pred(elem):
+        return not comp(value, key(elem))
 
-    return partition_point(xs, pred)
+    return partition_point(seq, pred)

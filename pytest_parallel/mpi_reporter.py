@@ -1,15 +1,14 @@
+import numpy as np
 import pytest
-
-from mpi4py import MPI
-
 from _pytest._code.code import (
     ExceptionChainRepr,
     ReprTraceback,
-    ReprEntry,
     ReprEntryNative,
     ReprFileLocation,
 )
+from mpi4py import MPI
 
+from .algo import partition, lower_bound
 from .utils import (
     number_of_working_processes,
     get_n_proc_for_test,
@@ -17,9 +16,6 @@ from .utils import (
     add_n_procs,
     is_dyn_master_process,
 )
-from .algo import partition, lower_bound
-import operator
-import numpy as np
 
 
 def gather_report(mpi_reports, n_sub_rank):
@@ -133,8 +129,8 @@ class SequentialScheduler:
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
         outcome = yield
-
-        # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
+        # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED)
+        # when no test run on non-master
         if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
             session.testscollected = 1
         return True
@@ -156,25 +152,25 @@ class SequentialScheduler:
 
 def group_items_by_parallel_steps(items, n_workers):
     add_n_procs(items)
-    items.sort(key=lambda item: item.n_procs, reverse=True)
+    items.sort(key=lambda item: item.n_proc, reverse=True)
 
     remaining_n_procs_by_step = []
     items_by_step = []
     items_to_skip = []
     for item in items:
-        if item.n_procs > n_workers:
+        if item.n_proc > n_workers:
             items_to_skip += [item]
         else:
             found_step = False
             for idx, remaining_procs in enumerate(remaining_n_procs_by_step):
-                if item.n_procs <= remaining_procs:
+                if item.n_proc <= remaining_procs:
                     items_by_step[idx] += [item]
-                    remaining_n_procs_by_step[idx] -= item.n_procs
+                    remaining_n_procs_by_step[idx] -= item.n_proc
                     found_step = True
                     break
             if not found_step:
                 items_by_step += [[item]]
-                remaining_n_procs_by_step += [n_workers - item.n_procs]
+                remaining_n_procs_by_step += [n_workers - item.n_proc]
 
     return items_by_step, items_to_skip
 
@@ -332,24 +328,25 @@ def sub_comm_from_ranks(global_comm, sub_ranks):
 
 
 def item_with_biggest_admissible_n_proc(items, n_av_procs):
-    key = lambda item: item.n_procs
+    def _key(item):
+        return item.n_proc
+
     # Preconditions:
     #   sorted(items, key)
     #   len(items)>0
 
     # best choices: tests requiring the most procs while still 'runnable'
     # among those, we favor the first in the array for 'stability' reasons (no reordering when not needed)
-    idx = lower_bound(items, n_av_procs, key)
-    if idx == 0 and items[idx].n_procs > n_av_procs:  # all items ask too much
+    idx = lower_bound(items, n_av_procs, _key)
+    if idx == 0 and items[idx].n_proc > n_av_procs:  # all items ask too much
         return -1
-    elif idx < len(items) and items[idx].n_procs == n_av_procs:
+    if idx < len(items) and items[idx].n_proc == n_av_procs:
         # we find the first internal item with matching n_proc
         return idx
-    else:
-        # we did not find an item with exactly the matching n_proc,
-        # in this case, the item just before gives the new n_proc we are searching for
-        max_needed_n_proc = items[idx - 1].n_procs
-        return lower_bound(items, max_needed_n_proc, key)
+    # we did not find an item with exactly the matching n_proc,
+    # in this case, the item just before gives the new n_proc we are searching for
+    max_needed_n_proc = items[idx - 1].n_proc
+    return lower_bound(items, max_needed_n_proc, _key)
 
 
 def mark_original_index(items):
@@ -372,7 +369,7 @@ WHEN_TAGS = {
 
 ####### Server #######
 def schedule_test(item, available_procs, inter_comm):
-    n_procs = item.n_procs
+    n_procs = item.n_proc
     original_idx = item.original_index
 
     sub_ranks = []
@@ -411,7 +408,7 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
     # get associated item
     item = items_to_run[original_idx]
-    n_proc = item.n_procs
+    n_proc = item.n_proc
     sub_ranks = item.sub_ranks
     assert first_rank_done in sub_ranks
 
@@ -479,7 +476,7 @@ class DynamicScheduler:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
-        # same begining as PyTest default's
+        # same beginning as PyTest default's
         if (
             session.testsfailed
             and not session.config.option.continue_on_collection_errors
@@ -499,7 +496,7 @@ class DynamicScheduler:
         add_n_procs(session.items)
 
         ## isolate skips
-        has_enough_procs = lambda item: item.n_procs <= n_workers
+        has_enough_procs = lambda item: item.n_proc <= n_workers
         items_to_run, items_to_skip = partition(session.items, has_enough_procs)
 
         ## remember original position
@@ -517,7 +514,7 @@ class DynamicScheduler:
                 run_item_test(item, nextitem, session)
 
             # schedule tests to run
-            items_left_to_run = sorted(items_to_run, key=lambda item: item.n_procs)
+            items_left_to_run = sorted(items_to_run, key=lambda item: item.n_proc)
             available_procs = np.ones(n_workers, dtype=np.int8)
 
             while len(items_left_to_run) > 0:
@@ -576,11 +573,7 @@ class DynamicScheduler:
                 report
             )  # has been 'run' locally: do nothing special
         else:
-            assert (
-                report.when == "setup"
-                or report.when == "call"
-                or report.when == "teardown"
-            )  # only know tags
+            assert report.when in ("setup", "call", "teardown")  # only known tags
             tag = WHEN_TAGS[report.when]
 
             # master ranks of each sub_comm must send their report to rank 0
