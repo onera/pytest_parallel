@@ -8,7 +8,7 @@ on:
       - master
 
 env:
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD: 1 # FIXME hack because `-p no:pytest_parallel` does not unload the plugin as advertised
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD: 1 # To ensure that Autoload do not change test behavior
 
 # A workflow run is made up of one or more jobs that
 # can run sequentially or in parallel

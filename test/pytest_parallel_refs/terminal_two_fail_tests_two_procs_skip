@@ -3,7 +3,7 @@ platform [^\n]*
 cachedir: [^\n]*
 ?(metadata: [^\n]*)?
 rootdir: [^\n]*
-plugins: [^\n]*
+?(plugins: [^\n]*)?
 collecting ... [\s]*collected 2 items[\s]*
 
 [^\n]*test_two_fail_tests_two_procs.py::test_fail_1\[2\] SKIPPED[^\n]*

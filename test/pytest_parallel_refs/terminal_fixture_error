@@ -3,7 +3,7 @@ platform [^\n]*
 cachedir: [^\n]*
 ?(metadata: [^\n]*)?
 rootdir: [^\n]*
-plugins: [^\n]*
+?(plugins: [^\n]*)?
 collecting ... [\s]*collected 1 item[\s]*
 
 [^\n]*test_fixture_error.py::test_fixture_error ERROR

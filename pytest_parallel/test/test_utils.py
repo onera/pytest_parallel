@@ -54,8 +54,10 @@ def test_item_with_biggest_admissible_n_proc():
         item_mock(4),  # 3
     ]
 
+    # For the check `assert item_with_biggest_admissible_n_proc(items, 1) == 0`
+    # 1 would have worked instead of 0, but we prefer the first one
     assert item_with_biggest_admissible_n_proc(items, 0) == -1
-    assert item_with_biggest_admissible_n_proc(items, 1) == 0  # 1 would have worked too, but we prefer the first one
+    assert item_with_biggest_admissible_n_proc(items, 1) == 0
     assert item_with_biggest_admissible_n_proc(items, 2) == 2
     assert item_with_biggest_admissible_n_proc(items, 3) == 2
     assert item_with_biggest_admissible_n_proc(items, 4) == 3

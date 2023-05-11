@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 
-#def test_env_ok(pytestconfig):
-#  assert not pytestconfig.pluginmanager.hasplugin('pytest_parallel')
+# def test_env_ok(pytestconfig):
+#     assert not pytestconfig.pluginmanager.hasplugin('pytest_parallel')
 
 
 root_dir = Path(__file__).parent
@@ -54,9 +54,10 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     stderr_file_path.unlink(missing_ok=True)
 
     test_env = os.environ.copy()
-    test_env.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
-    # cmd  = f'export PYTEST_PLUGINS=pytest_parallel.plugin\n' # re-enable the plugin when we execute the command
-    # cmd += f'mpirun -np {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}'
+    # According to Gentoo people it is a good practise for CI
+    # To disable autoload and enforce explicit plugin loading
+    if "PYTEST_DISABLE_PLUGIN_AUTOLOAD" not in test_env:
+        test_env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     cmd = f"mpiexec -n {n_workers} pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
     subprocess.run(cmd, shell=True, text=True, env=test_env)
     captured = capfd.readouterr()
@@ -66,7 +67,6 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
         print("err: ", captured.err)
         print("out: ", captured.out.replace(os.linesep, "\n"))
     assert ref_match(output_file_name)
-    # cmd += f' > {output_file_path}  2> {stderr_file_path}' # redirections. stderr is actually not very useful (since the tests errors are reported in stdout by PyTest)
 
 
 param_scheduler = (
