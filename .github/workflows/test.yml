@@ -84,6 +84,6 @@ jobs:
           mpi: ${{ matrix.mpi }}
       - run: pip install .
       # Unit testing
-      - run: pytest -p no:pytest_parallel ./pytest_parallel/test
+      - run: pytest ./pytest_parallel/test
       # MPI parallel testing
-      - run: pytest -p no:pytest_parallel ./test/test_pytest_parallel.py
+      - run: pytest ./test/test_pytest_parallel.py
