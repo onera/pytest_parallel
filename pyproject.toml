@@ -62,4 +62,3 @@ Documentation = "https://github.com/onera/pytest_parallel"
 
 [project.entry-points.pytest11]
 parallel = "pytest_parallel.plugin"
-parallel_fixtures = "pytest_parallel.fixtures"

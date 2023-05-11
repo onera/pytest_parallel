@@ -46,15 +46,15 @@ def test_group_items_by_parallel_steps():
 
 class item_mock_admit:
     def __init__(self, n_proc):
-        self._n_mpi_proc = n_proc
+        self.n_procs = n_proc
 
 
 def test_item_with_biggest_admissible_n_proc():
     items = [
-        item_mock_admit(1), # 0
-        item_mock_admit(1), # 1
-        item_mock_admit(2), # 2
-        item_mock_admit(4), # 3
+        item_mock_admit(1),  # 0
+        item_mock_admit(1),  # 1
+        item_mock_admit(2),  # 2
+        item_mock_admit(4),  # 3
     ]
 
     assert item_with_biggest_admissible_n_proc(items, 0) == -1

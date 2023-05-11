@@ -36,7 +36,7 @@ def get_n_proc_for_test(item: Item) -> int:
 
 def add_n_procs(items):
     for item in items:
-        item._n_mpi_proc = get_n_proc_for_test(item)
+        item.n_procs = get_n_proc_for_test(item)
 
 
 def mark_skip(item):
@@ -45,7 +45,7 @@ def mark_skip(item):
     n_proc_test = get_n_proc_for_test(item)
     skip_msg = f"Not enough procs to execute: {n_proc_test} required but only {n_rank} available"
     item.add_marker(pytest.mark.skip(reason=skip_msg), append=False)
-    item._mpi_skip = True
+    item.marker_mpi_skip = True
 
 
 def is_dyn_master_process(comm):

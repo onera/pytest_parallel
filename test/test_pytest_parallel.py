@@ -58,7 +58,12 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     stderr_file_path.unlink(missing_ok=True)
 
     test_env = os.environ.copy()
-    # test_env["PYTEST_PLUGINS"] = "pytest_parallel.plugin"
+    try:
+        # Check if plugin already installed in env.
+        import pytest_parallel.plugin
+    except ImportError as e:
+        # Assume running for development root dir
+        test_env["PYTEST_PLUGINS"] = "pytest_parallel.plugin"
 
     # cmd  = f'export PYTEST_PLUGINS=pytest_parallel.plugin\n' # re-enable the plugin when we execute the command
     # cmd += f'mpirun -np {n_workers} pytest -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}'
