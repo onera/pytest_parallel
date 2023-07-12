@@ -62,3 +62,27 @@ def sub_comm(request):
 
 
 ## TODO backward compatibility end
+
+# --------------------------------------------------------------------------
+import tempfile
+from pathlib import Path
+class collective_tmp_dir:
+  """
+  Context manager creating a tmp dir in parallel and removing it at the
+  exit
+  """
+  def __init__(self, comm):
+    self.comm = comm
+  def __enter__(self):
+    self.tmp_dir = tempfile.TemporaryDirectory() if self.comm.Get_rank() == 0 else None
+    self.tmp_path = Path(self.tmp_dir.name) if self.comm.Get_rank() == 0 else None
+    return self.comm.bcast(self.tmp_path, root=0)
+  def __exit__(self, type, value, traceback):
+    self.comm.barrier()
+    if self.comm.Get_rank() == 0:
+      self.tmp_dir.cleanup()
+
+@pytest.fixture
+def mpi_tmpdir(comm):
+  with collective_tmp_dir(comm) as tmpdir:
+    yield tmpdir
