@@ -90,3 +90,5 @@ jobs:
       - run: pytest -p no:pytest_parallel ./pytest_parallel/test
       # MPI parallel testing
       - run: pytest -p no:pytest_parallel ./test/test_pytest_parallel.py
+      # Test extra facilities
+      - run: mpiexec -n 3 pytest -p parallel ./test/test_pytest_parallel_extra.py
