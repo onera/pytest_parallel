@@ -6,14 +6,24 @@
 import pytest
 import pytest_parallel
 
-from pytest_parallel.plugin import collective_tmp_dir
+from pytest_parallel.plugin import CollectiveTemporaryDirectory
 
 
 @pytest_parallel.mark.parallel(3)
 def test_collective_tmp_dir(comm):
-  with collective_tmp_dir(comm) as tmpdir:
-    assert tmpdir.exists() and tmpdir.is_dir() # Check dir has been created
-    assert comm.allgather(tmpdir) == comm.Get_size() * [tmpdir]  # Check if path is the same across all ranks
+    with CollectiveTemporaryDirectory(comm) as tmpdir:
+        assert tmpdir.exists() and tmpdir.is_dir()  # Check dir has been created
+        assert comm.allgather(tmpdir) == comm.Get_size() * [
+            tmpdir
+        ]  # Check if path is the same across all ranks
 
-  comm.barrier() # Wait for suppression
-  assert not tmpdir.exists()
+    comm.barrier()  # Wait for suppression
+    assert not tmpdir.exists()
+
+
+@pytest_parallel.mark.parallel(3)
+def test_collective_tmp_dir(comm, mpi_tmpdir):
+    assert mpi_tmpdir.exists() and mpi_tmpdir.is_dir()  # Check dir has been created
+    assert comm.allgather(mpi_tmpdir) == comm.Get_size() * [
+        mpi_tmpdir
+    ]  # Check if path is the same across all ranks

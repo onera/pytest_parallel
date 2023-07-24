@@ -1,12 +1,13 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+import tempfile
 import pytest
-
+from pathlib import Path
 from mpi4py import MPI
 
-from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
 
+from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
 from .utils import spawn_master_process, is_master_process
 
 
@@ -62,27 +63,34 @@ def sub_comm(request):
 
 
 ## TODO backward compatibility end
-
 # --------------------------------------------------------------------------
-import tempfile
-from pathlib import Path
-class collective_tmp_dir:
-  """
-  Context manager creating a tmp dir in parallel and removing it at the
-  exit
-  """
-  def __init__(self, comm):
-    self.comm = comm
-  def __enter__(self):
-    self.tmp_dir = tempfile.TemporaryDirectory() if self.comm.Get_rank() == 0 else None
-    self.tmp_path = Path(self.tmp_dir.name) if self.comm.Get_rank() == 0 else None
-    return self.comm.bcast(self.tmp_path, root=0)
-  def __exit__(self, type, value, traceback):
-    self.comm.barrier()
-    if self.comm.Get_rank() == 0:
-      self.tmp_dir.cleanup()
+class CollectiveTemporaryDirectory:
+    """
+    Context manager creating a tmp dir in parallel and removing it at the
+    exit
+    """
+
+    def __init__(self, comm):
+        self.comm = comm
+        self.tmp_dir = None
+        self.tmp_path = None
+
+    def __enter__(self):
+        rank = self.comm.Get_rank()
+        self.tmp_dir = tempfile.TemporaryDirectory() if rank == 0 else None
+        self.tmp_path = Path(self.tmp_dir.name) if rank == 0 else None
+        return self.comm.bcast(self.tmp_path, root=0)
+
+    def __exit__(self, type, value, traceback):
+        self.comm.barrier()
+        if self.comm.Get_rank() == 0:
+            self.tmp_dir.cleanup()
+
 
 @pytest.fixture
 def mpi_tmpdir(comm):
-  with collective_tmp_dir(comm) as tmpdir:
-    yield tmpdir
+    """
+    This function ensure that one process handles the naming of temporary folders.
+    """
+    with CollectiveTemporaryDirectory(comm) as tmpdir:
+        yield tmpdir
