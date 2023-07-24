@@ -52,7 +52,7 @@ dependencies = [
     "mpi4py",
     "numpy",
 ]
-version = "1.0.0"
+version = "1.1.0"
 
 [project.urls]
 Homepage = "https://github.com/onera/pytest_parallel"
