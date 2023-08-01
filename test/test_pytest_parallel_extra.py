@@ -3,7 +3,6 @@
   can be used to set up the test framework (we suppose that the core
   plugin is correct because it has been tested before)
 """
-import pytest
 import pytest_parallel
 
 from pytest_parallel.plugin import CollectiveTemporaryDirectory
