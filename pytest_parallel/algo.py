@@ -8,11 +8,11 @@ def identity(elem):
     return elem
 
 
-def partition(seq, pred):
+def partition(xs, pred):
     """
-    partitions sequence `seq` into
-      `xs_true`  with elements of `seq` that       satisfy predicate `pred`
-      `xs_false` with elements of `seq` that don't satisfy predicate `pred`
+    partitions sequence `xs` into
+      `xs_true`  with elements of `xs` that       satisfy predicate `pred`
+      `xs_false` with elements of `xs` that don't satisfy predicate `pred`
     then returns `xs_true`, `xs_false`
 
     Complexity:
@@ -25,7 +25,7 @@ def partition(seq, pred):
     """
     xs_true = []
     xs_false = []
-    for elem in seq:
+    for elem in xs:
         if pred(elem):
             xs_true.append(elem)
         else:
@@ -33,7 +33,7 @@ def partition(seq, pred):
     return xs_true, xs_false
 
 
-def partition_point(seq, pred):
+def partition_point(xs, pred):
     """
     Gives the partition point of sequence `xs`
     That is, the index i where
@@ -52,25 +52,25 @@ def partition_point(seq, pred):
         Constant
     """
     i = 0
-    j = len(seq)
+    j = len(xs)
     while i < j:
         mid = (i + j) // 2
-        if pred(seq[mid]):
+        if pred(xs[mid]):
             i = mid + 1
         else:
             j = mid
     return i
 
 
-def lower_bound(seq, value, key=identity, comp=operator.lt):
+def lower_bound(xs, value, key=identity, comp=operator.lt):
     def pred(elem):
         return comp(key(elem), value)
 
-    return partition_point(seq, pred)
+    return partition_point(xs, pred)
 
 
-def upper_bound(seq, value, key=identity, comp=operator.lt):
+def upper_bound(xs, value, key=identity, comp=operator.lt):
     def pred(elem):
         return not comp(value, key(elem))
 
-    return partition_point(seq, pred)
+    return partition_point(xs, pred)

@@ -381,7 +381,7 @@ def schedule_test(item, available_procs, inter_comm):
 
     item.sub_ranks = sub_ranks
 
-    # the procs are busy
+    # mark the procs as busy
     for sub_rank in sub_ranks:
         available_procs[sub_rank] = False
 
@@ -412,13 +412,11 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
     sub_ranks = item.sub_ranks
     assert first_rank_done in sub_ranks
 
-    # receive done message from all other proc associated to the item
+    # receive done message from all other procs associated to the item
     for sub_rank in sub_ranks:
         if sub_rank != first_rank_done:
             rank_original_idx = inter_comm.recv(source=sub_rank, tag=WORK_DONE_TAG)
-            assert (
-                rank_original_idx == original_idx
-            )  # sub_rank is supposed to have worked on the same test
+            assert (rank_original_idx == original_idx) # sub_rank is supposed to have worked on the same test
 
     # the procs are now available
     for sub_rank in sub_ranks:
@@ -442,21 +440,19 @@ def receive_run_and_report_tests(
         # receive
         original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
         if original_idx == -1:
-            return  # signal work is done
+            return # signal work is done
 
         # run
         sub_comm = sub_comm_from_ranks(global_comm, sub_ranks)
         item = items_to_run[original_idx]
         item.sub_comm = sub_comm
-        nextitem = None  # not known at this point
+        nextitem = None # not known at this point
         run_item_test(item, nextitem, session)
 
         # signal work is done for the test
         inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
 
-        MPI.Request.waitall(
-            current_item_requests
-        )  # make sure all report isends have been received
+        MPI.Request.waitall(current_item_requests) # make sure all report isends have been received
         current_item_requests.clear()
 
 
@@ -468,6 +464,8 @@ class DynamicScheduler:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
+        # This is where the test is normally run.
+        # Since the master process only collects the reports, it needs to *not* run anything.
         cond = is_dyn_master_process(self.inter_comm) and not (
             hasattr(pyfuncitem, "marker_mpi_skip") and pyfuncitem.marker_mpi_skip
         )
@@ -520,25 +518,19 @@ class DynamicScheduler:
             while len(items_left_to_run) > 0:
                 n_av_procs = np.sum(available_procs)
 
-                item_idx = item_with_biggest_admissible_n_proc(
-                    items_left_to_run, n_av_procs
-                )
+                item_idx = item_with_biggest_admissible_n_proc(items_left_to_run, n_av_procs)
 
                 if item_idx == -1:
-                    wait_test_to_complete(
-                        items_to_run, session, available_procs, self.inter_comm
-                    )
+                    wait_test_to_complete(items_to_run, session, available_procs, self.inter_comm)
                 else:
-                    schedule_test(
-                        items_left_to_run[item_idx], available_procs, self.inter_comm
-                    )
+                    schedule_test(items_left_to_run[item_idx], available_procs, self.inter_comm)
                     del items_left_to_run[item_idx]
 
             wait_last_tests_to_complete(
                 items_to_run, session, available_procs, self.inter_comm
             )
             signal_all_done(self.inter_comm)
-        else:  # worker proc
+        else: # worker proc
             receive_run_and_report_tests(
                 items_to_run,
                 session,
@@ -585,12 +577,12 @@ class DynamicScheduler:
                     # The idea of the scheduler is the following:
                     #   The server schedules test over clients
                     #   A client executes the test then report to the server it is done
-                    #   The server execute the PyTest pipeline to make it think it ran the test (but only receives the reports of the client)
+                    #   The server executes the PyTest pipeline to make it think it ran the test (but only receives the reports of the client)
                     #   The server continues its scheduling
                     # Here in the report, we need an isend, because the ordering is the following:
                     #   Client: run test, isend reports, send done to server
                     #   Server: recv done from client, 'run' test (i.e. recv reports)
-                    # So the 'send done' must be received before the 'send report'
+                    # So the 'send done' must be received before the 'isend report'
                     request = self.inter_comm.isend(report, dest=0, tag=tag)
                     self.current_item_requests.append(request)
             else:  # global master: receive
@@ -600,3 +592,211 @@ class DynamicScheduler:
 
                 report.outcome = mpi_report.outcome
                 report.longrepr = mpi_report.longrepr
+
+
+import datetime
+import subprocess
+import socket
+from . import socket_utils
+
+class ProcessWorker:
+    def __init__(self, n_working_procs, scheduler_ip_address, scheduler_port, test_idx):
+        self.n_working_procs = n_working_procs
+        self.scheduler_ip_address = scheduler_ip_address
+        self.scheduler_port = scheduler_port
+        self.test_idx = test_idx
+#
+#    # TODO necessary? cf. sequential
+#    @pytest.hookimpl(tryfirst=True)
+#    def pytest_runtestloop(self, session) -> bool:
+#        # same beginning as PyTest default's
+#        if (
+#            session.testsfailed
+#            and not session.config.option.continue_on_collection_errors
+#        ):
+#            raise session.Interrupted(
+#                "%d error%s during collection"
+#                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+#            )
+#
+#        if session.config.option.collectonly:
+#            return True
+#
+#        ### add proc to items
+#        #add_n_procs(session.items)
+#
+#        receive_run_and_report_tests(
+#            items_to_run,
+#            session,
+#            self.current_item_requests,
+#            self.global_comm,
+#            self.inter_comm,
+#        )
+
+
+LOCALHOST = '127.0.0.1'
+def submit_items(items_to_run, scheduler, socket, n_working_procs):
+    # setup master's socket
+    SCHEDULER_IP_ADDRESS='10.33.240.8' # spiro07-clu
+    socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
+    socket.listen()
+    port = socket.getsockname()[1]
+
+    # sort item by comm size
+    items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
+
+    # launch srun for each item
+    cmds = ''
+    for item in items:
+        test_idx = item.original_index
+        cmd =  f'srun --exclusive --ntasks={item.n_proc} -l'
+        cmd += f' python3 -u ~/dev/pytest_parallel/slurm/worker.py {SCHEDULER_IP_ADDRESS} {port} {test_idx}'
+        #cmd += f' python3 -u ~/dev/pytest_parallel/slurm/worker.py {SCHEDULER_IP_ADDRESS} {port} {test_idx}'
+        cmd += f' > out_{test_idx}.txt 2> err_{test_idx}.txt'
+        cmd += ' &' # launch everything in parallel
+        cmds += cmd + '\n'
+
+    pytest_slurm = f'''#!/bin/bash
+
+#SBATCH --job-name=pytest_par
+#SBATCH --time 00:30:00
+#SBATCH --qos=co_short_std
+#SBATCH --ntasks={n_working_procs}
+##SBATCH --nodes=2-2
+#SBATCH --nodes=1-1
+#SBATCH --output=slurm.%j.out
+#SBATCH --error=slurm.%j.err
+
+#source /scratchm/sonics/dist/source.sh --env maia --compiler gcc@12 --mpi intel-oneapi
+module load socle-cfd/6.0-intel2220-impi
+export PYTHONPATH=/stck/bberthou/dev/pytest_parallel:$PYTHONPATH
+export PYTEST_PLUGINS=pytest_parallel.plugin
+{cmds}
+wait
+'''
+
+    with open('pytest_slurm.sh','w') as f:
+      f.write(pytest_slurm)
+
+    ## wait for workers to finish and collect error codes
+    #sbatch_cmd = 'sbatch pytest_slurm.sh'
+    #p = subprocess.Popen([sbatch_cmd], shell=True)
+    #print('Submitting tests to SLURM...')
+    #returncode = p.wait()
+    #assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
+
+def receive_items(items, session, socket):
+    n = len(items)
+    #n = 2
+    while n>0:
+        print(f'remaining_workers={n} - ',datetime.datetime.now())
+        #conn, addr = socket.accept()
+        #with conn:
+        #    msg = socket_utils.recv(conn)
+        #    msg = eval(msg) # the worker is supposed to have send a dict with the right, structured information
+        #    print(msg)
+        #    test_idx = msg['test_idx']
+        #    print('run_item_test')
+        #    nextitem = None  # not known at this point
+        #    run_item_test(items[test_idx], nextitem, session) # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+        #    print('run_item_test - done')
+        test_idx = 2-n
+        print('run_item_test')
+        item = items[test_idx]
+        item.sub_comm = MPI.COMM_NULL
+        info = {
+            'test_idx': test_idx,
+            'setup': {
+                'outcome': 'passed',
+                'longrepr': 'setup msg',
+            },
+            'call': {
+                'outcome': 'passed',
+                'longrepr': 'call msg',
+            },
+            'teardown': {
+                'outcome': 'passed',
+                'longrepr': 'teardown msg',
+            },
+        }
+        item.info = info
+        nextitem = None  # not known at this point
+        run_item_test(item, nextitem, session) # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+        print('run_item_test - done')
+        n -= 1
+    print('recv done',datetime.datetime.now())
+
+class ProcessScheduler:
+    def __init__(self, n_working_procs, scheduler):
+        self.n_working_procs = n_working_procs
+        self.current_item_requests = []
+        self.scheduler = scheduler
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_pyfunc_call(self, pyfuncitem):
+        # This is where the test is normally run.
+        # Since the scheduler process only collects the reports, it needs to *not* run anything.
+        if not (hasattr(pyfuncitem, "marker_mpi_skip") and pyfuncitem.marker_mpi_skip):
+            return True  # for this hook, `firstresult=True` so returning a non-None will stop other hooks to run
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtestloop(self, session) -> bool:
+        # same beginning as PyTest default's
+        if (
+            session.testsfailed
+            and not session.config.option.continue_on_collection_errors
+        ):
+            raise session.Interrupted(
+                "%d error%s during collection"
+                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+            )
+
+        if session.config.option.collectonly:
+            return True
+
+        # mark original position
+        mark_original_index(session.items)
+        ## add proc to items
+        add_n_procs(session.items)
+
+        # isolate skips
+        has_enough_procs = lambda item: item.n_proc <= self.n_working_procs
+        items_to_run, items_to_skip = partition(session.items, has_enough_procs)
+
+        # run skipped
+        for i, item in enumerate(items_to_skip):
+            item.sub_comm = MPI.COMM_SELF
+            mark_skip(item)
+            nextitem = items_to_skip[i + 1] if i + 1 < len(items_to_skip) else None
+            run_item_test(item, nextitem, session)
+
+        # schedule tests to run
+        submit_items(items_to_run, self.scheduler, self.socket, self.n_working_procs)
+        receive_items(session.items, session, self.socket)
+
+        return True
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_makereport(self, item):
+        """
+        Need to hook to pass the test sub-comm and the master_running_proc to `pytest_runtest_logreport`,
+        and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+        Also, if test is not run on this proc, mark the outcome accordingly
+        """
+        result = yield
+        report = result.get_result()
+        if hasattr(item, "marker_mpi_skip") and item.marker_mpi_skip:
+            report.mpi_skip = True
+        else:
+            report.info = item.info
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_logreport(self, report):
+        if hasattr(report, "mpi_skip") and report.mpi_skip:
+            pass
+        else:
+            assert report.when in ("setup", "call", "teardown")  # only known tags
+
+            report.outcome  = report.info[report.when]['outcome']
+            report.longrepr = report.info[report.when]['longrepr']

@@ -19,7 +19,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
   for i in range(0,n):
     #p = subprocess.Popen([f'python3 -u worker.py {port} {i} > out.txt 2> err.txt'], shell=True)
     print('starting subprocess - ',datetime.datetime.now())
-    p = subprocess.Popen([f'srun --exclusive --ntasks=1 --qos c1_inter_giga -l python3 -u worker.py {port} {i} > out_{i}.txt 2> err_{i}.txt'], shell=True) # --exclusive for SLURM to parallelize with srun
+    p = subprocess.Popen([f'srun --exclusive --ntasks=1 --qos c1_inter_giga -l python3 -u worker.py {port} {i} > out_{i}.txt 2> err_{i}.txt'], shell=True) # --exclusive for SLURM to parallelize with srun (https://stackoverflow.com/a/66805905/1583122)
     print('detached subprocess - ',datetime.datetime.now())
     workers.append(p)
 

@@ -34,10 +34,14 @@ def is_dyn_master_process(comm):
     return True
 
 
-def is_master_process(comm, scheduler):
+PROCESS_SCHEDULERS = ["shell", "slurm"]
+def should_enable_terminal_reporter(comm, scheduler):
     if scheduler == "dynamic":
         return is_dyn_master_process(comm)
-    return comm.Get_rank() == 0
+    elif scheduler in PROCESS_SCHEDULERS:
+        return True # report if master, and also report (into file) if worker
+    else:
+        return comm.Get_rank() == 0
 
 
 def spawn_master_process(global_comm):
