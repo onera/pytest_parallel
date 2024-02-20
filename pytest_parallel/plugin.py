@@ -56,14 +56,6 @@ def comm(request):
 
 
 # --------------------------------------------------------------------------
-## TODO backward compatibility begin
-@pytest.fixture
-def sub_comm(request):
-    return request.node.sub_comm
-
-
-## TODO backward compatibility end
-# --------------------------------------------------------------------------
 class CollectiveTemporaryDirectory:
     """
     Context manager creating a tmp dir in parallel and removing it at the

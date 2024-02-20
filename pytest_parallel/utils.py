@@ -5,33 +5,12 @@ from _pytest.nodes import Item
 from mpi4py import MPI
 
 
-# TODO backward compatibility begin
-def get_callspec_param(callspec, param):
-    try:
-        return callspec.getparam(param)
-    except ValueError:
-        return None
-
-
-def get_n_proc_for_test(item: Item) -> int:
-    if hasattr(item, "callspec"):
-        comm_size = get_callspec_param(item.callspec, "comm")
-        if comm_size is not None:
-            return comm_size
-        comm_size = get_callspec_param(item.callspec, "sub_comm")
-        if comm_size is not None:
-            return comm_size
-    return 1
-
-
-# TODO backward compatibility end
-
-# def get_n_proc_for_test(item: Item) -> int :
-#  if not hasattr(item, 'callspec'): return 1 # no callspec, so no `comm` => sequential test case
-#  try:
-#    return item.callspec.getparam('comm')
-#  except ValueError: # no `comm` => sequential test case
-#    return 1
+def get_n_proc_for_test(item: Item) -> int :
+ if not hasattr(item, 'callspec'): return 1 # no callspec, so no `comm` => sequential test case
+ try:
+   return item.callspec.getparam('comm')
+ except ValueError: # no `comm` => sequential test case
+   return 1
 
 
 def add_n_procs(items):
