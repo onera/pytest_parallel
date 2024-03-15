@@ -5,6 +5,8 @@ cachedir: [^\n]*
 rootdir: [^\n]*
 ?(?:plugins: [^\n]*)?
 collecting ... [\s]*collected 8 items[\s]*
+?(?:Submitting tests to SLURM...)?
+?(?:SLURM job [^\n]* has been submitted)?
 
 (?# [This is a comment until the closing parenthesis]
     The following lines use the regex 'lookahead' mechanism to match the lines in any order

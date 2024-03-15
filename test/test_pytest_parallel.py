@@ -56,6 +56,7 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     if "PYTEST_DISABLE_PLUGIN_AUTOLOAD" not in test_env:
         test_env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     cmd = f"mpiexec -n {n_workers} pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
+    #cmd = f"pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} --slurm_options='--time=00:30:00 --qos=co_short_std --ntasks={n_workers}' {test_file_path}"
     subprocess.run(cmd, shell=True, text=True, env=test_env)
     captured = capfd.readouterr()
     with open(output_file_path, "w", encoding="utf-8", newline="\n") as f:
@@ -66,11 +67,11 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     assert ref_match(output_file_name)
 
 
-param_scheduler = (
-    ["sequential", "static", "dynamic"]
-    if sys.platform != "win32"
-    else ["sequential", "static"]
-)
+param_scheduler = ["sequential", "static", "dynamic"]
+# TODO "slurm" scheduler
+#param_scheduler = ["slurm"]
+if sys.platform == "win32":
+  param_scheduler = ["sequential", "static"]
 
 # fmt: off
 @pytest.mark.parametrize("scheduler", param_scheduler)

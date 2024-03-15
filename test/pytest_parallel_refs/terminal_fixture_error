@@ -5,6 +5,8 @@ cachedir: [^\n]*
 rootdir: [^\n]*
 ?(?:plugins: [^\n]*)?
 collecting ... [\s]*collected 1 item[\s]*
+?(?:Submitting tests to SLURM...)?
+?(?:SLURM job [^\n]* has been submitted)?
 
 [^\n]*test_fixture_error.py::test_fixture_error ERROR
 
