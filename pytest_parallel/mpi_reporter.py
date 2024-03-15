@@ -128,7 +128,7 @@ class SequentialScheduler:
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
-        outcome = yield
+        _ = yield
         # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED)
         # when no test run on non-master
         if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
@@ -184,7 +184,6 @@ def run_item_test(item, nextitem, session):
 
 
 def prepare_items_to_run(items, comm):
-    n_rank = comm.Get_size()
     i_rank = comm.Get_rank()
 
     items_to_run = []
@@ -408,7 +407,6 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
     # get associated item
     item = items_to_run[original_idx]
-    n_proc = item.n_proc
     sub_ranks = item.sub_ranks
     assert first_rank_done in sub_ranks
 
@@ -605,37 +603,49 @@ class ProcessWorker:
         self.scheduler_ip_address = scheduler_ip_address
         self.scheduler_port = scheduler_port
         self.test_idx = test_idx
-#
-#    # TODO necessary? cf. sequential
-#    @pytest.hookimpl(tryfirst=True)
-#    def pytest_runtestloop(self, session) -> bool:
-#        # same beginning as PyTest default's
-#        if (
-#            session.testsfailed
-#            and not session.config.option.continue_on_collection_errors
-#        ):
-#            raise session.Interrupted(
-#                "%d error%s during collection"
-#                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
-#            )
-#
-#        if session.config.option.collectonly:
-#            return True
-#
-#        ### add proc to items
-#        #add_n_procs(session.items)
-#
-#        receive_run_and_report_tests(
-#            items_to_run,
-#            session,
-#            self.current_item_requests,
-#            self.global_comm,
-#            self.inter_comm,
-#        )
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtestloop(self, session) -> bool:
+        comm = MPI.COMM_WORLD
+        print(f'self.test_idx = {self.test_idx}')
+        item = session.items[self.test_idx]
+        item.sub_comm = comm
+        item.test_info = {'test_idx': self.test_idx}
+        nextitem = None
+        run_item_test(item, nextitem, session)
+        print('run_item_test done')
+        print(f'item.test_info = {item.test_info}')
+
+        if comm.Get_rank() == 0:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect((self.scheduler_ip_address, self.scheduler_port))
+                socket_utils.send(s, str(item.test_info))
+
+        print('sending done')
+        return True
+      
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_makereport(self, item):
+        """
+        We need to hook to pass the test sub-comm to `pytest_runtest_logreport`,
+        and for that we add the sub-comm to the only argument of `pytest_runtest_logreport`, that is, `report`
+        We also need to pass `item.test_info` so that we can update it
+        """
+        result = yield
+        report = result.get_result()
+        report.sub_comm = item.sub_comm
+        report.test_info = item.test_info
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_logreport(self, report):
+        assert report.when in ("setup", "call", "teardown")  # only known tags
+        gather_report_on_local_rank_0(report)
+        report.test_info.update({report.when: {'outcome': report.outcome, 'longrepr': report.longrepr}})
+
 
 
 LOCALHOST = '127.0.0.1'
-def submit_items(items_to_run, scheduler, socket, n_working_procs):
+def submit_items(items_to_run, socket, n_working_procs, main_invoke_params):
     # setup master's socket
     SCHEDULER_IP_ADDRESS='10.33.240.8' # spiro07-clu
     socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
@@ -650,7 +660,10 @@ def submit_items(items_to_run, scheduler, socket, n_working_procs):
     for item in items:
         test_idx = item.original_index
         cmd =  f'srun --exclusive --ntasks={item.n_proc} -l'
-        cmd += f' python3 -u ~/dev/pytest_parallel/slurm/worker.py {SCHEDULER_IP_ADDRESS} {port} {test_idx}'
+        cmd += f' python3 -u -m pytest {main_invoke_params}'
+        cmd += f' --_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS}'
+        cmd += f' --_scheduler_port={port} --_test_idx={test_idx}'
+
         #cmd += f' python3 -u ~/dev/pytest_parallel/slurm/worker.py {SCHEDULER_IP_ADDRESS} {port} {test_idx}'
         cmd += f' > out_{test_idx}.txt 2> err_{test_idx}.txt'
         cmd += ' &' # launch everything in parallel
@@ -678,59 +691,62 @@ wait
     with open('pytest_slurm.sh','w') as f:
       f.write(pytest_slurm)
 
-    ## wait for workers to finish and collect error codes
-    #sbatch_cmd = 'sbatch pytest_slurm.sh'
-    #p = subprocess.Popen([sbatch_cmd], shell=True)
-    #print('Submitting tests to SLURM...')
-    #returncode = p.wait()
-    #assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
+    ## submit SLURM job
+    sbatch_cmd = 'sbatch pytest_slurm.sh'
+    p = subprocess.Popen([sbatch_cmd], shell=True)
+    print('Submitting tests to SLURM...')
+    returncode = p.wait()
+    assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
 
 def receive_items(items, session, socket):
     n = len(items)
     #n = 2
     while n>0:
         print(f'remaining_workers={n} - ',datetime.datetime.now())
-        #conn, addr = socket.accept()
-        #with conn:
-        #    msg = socket_utils.recv(conn)
-        #    msg = eval(msg) # the worker is supposed to have send a dict with the right, structured information
-        #    print(msg)
-        #    test_idx = msg['test_idx']
-        #    print('run_item_test')
-        #    nextitem = None  # not known at this point
-        #    run_item_test(items[test_idx], nextitem, session) # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
-        #    print('run_item_test - done')
-        test_idx = 2-n
-        print('run_item_test')
-        item = items[test_idx]
-        item.sub_comm = MPI.COMM_NULL
-        info = {
-            'test_idx': test_idx,
-            'setup': {
-                'outcome': 'passed',
-                'longrepr': 'setup msg',
-            },
-            'call': {
-                'outcome': 'passed',
-                'longrepr': 'call msg',
-            },
-            'teardown': {
-                'outcome': 'passed',
-                'longrepr': 'teardown msg',
-            },
-        }
-        item.info = info
-        nextitem = None  # not known at this point
-        run_item_test(item, nextitem, session) # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
-        print('run_item_test - done')
+        conn, addr = socket.accept()
+        with conn:
+            msg = socket_utils.recv(conn)
+            test_info = eval(msg) # the worker is supposed to have send a dict with the correct structured information
+            test_idx = test_info['test_idx']
+            item = items[test_idx]
+            item.sub_comm = MPI.COMM_NULL
+            item.info = test_info
+
+            # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+            nextitem = None  # not known at this point
+            run_item_test(items[test_idx], nextitem, session)
+        ###    print('run_item_test - done')
+        ##test_idx = 2-n
+        ##print('run_item_test')
+        ##item = items[test_idx]
+        ##item.sub_comm = MPI.COMM_NULL
+        ##info = {
+        ##    'test_idx': test_idx,
+        ##    'setup': {
+        ##        'outcome': 'passed',
+        ##        'longrepr': 'setup msg',
+        ##    },
+        ##    'call': {
+        ##        'outcome': 'passed',
+        ##        'longrepr': 'call msg',
+        ##    },
+        ##    'teardown': {
+        ##        'outcome': 'passed',
+        ##        'longrepr': 'teardown msg',
+        ##    },
+        ##}
+        ##item.info = info
+        ##nextitem = None  # not known at this point
+        ##run_item_test(item, nextitem, session) # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+        ##print('run_item_test - done')
         n -= 1
     print('recv done',datetime.datetime.now())
 
 class ProcessScheduler:
-    def __init__(self, n_working_procs, scheduler):
+    def __init__(self, n_working_procs, main_invoke_params):
         self.n_working_procs = n_working_procs
         self.current_item_requests = []
-        self.scheduler = scheduler
+        self.main_invoke_params = main_invoke_params
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
 
     @pytest.hookimpl(tryfirst=True)
@@ -772,7 +788,7 @@ class ProcessScheduler:
             run_item_test(item, nextitem, session)
 
         # schedule tests to run
-        submit_items(items_to_run, self.scheduler, self.socket, self.n_working_procs)
+        submit_items(items_to_run, self.socket, self.n_working_procs, self.main_invoke_params)
         receive_items(session.items, session, self.socket)
 
         return True

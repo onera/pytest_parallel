@@ -23,15 +23,15 @@ if comm.Get_rank() == 0:
             'test_idx': test_idx,
             'setup': {
                 'outcome': 'passed',
-                'longrepr': 'setup msg',
+                'longrepr': f'setup msg {test_idx}',
             },
             'call': {
-                'outcome': 'passed',
-                'longrepr': 'call msg',
+                'outcome': 'failed',
+                'longrepr': f'call msg {test_idx}',
             },
             'teardown': {
                 'outcome': 'passed',
-                'longrepr': 'teardown msg',
+                'longrepr': f'teardown msg {test_idx}',
             },
         }
         socket_utils.send(s, str(info))

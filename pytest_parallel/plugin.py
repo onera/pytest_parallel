@@ -5,12 +5,11 @@ import tempfile
 import pytest
 from pathlib import Path
 from mpi4py import MPI
-import os
 
 
 from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
 from .mpi_reporter import ProcessScheduler, ProcessWorker
-from .utils import spawn_master_process, should_enable_terminal_reporter, PROCESS_SCHEDULERS
+from .utils import spawn_master_process, should_enable_terminal_reporter
 
 
 # --------------------------------------------------------------------------
@@ -37,6 +36,8 @@ def pytest_configure(config):
     global_comm = MPI.COMM_WORLD
 
     scheduler = config.getoption('scheduler')
+    slurm_worker = config.getoption('_worker') # only meaningful if scheduler == 'slurm'
+
     if scheduler == 'sequential':
         plugin = SequentialScheduler(global_comm)
     elif scheduler == 'static':
@@ -51,18 +52,23 @@ def pytest_configure(config):
             scheduler_port = config.getoption('_scheduler_port')
             test_idx = config.getoption('_test_idx')
             plugin = ProcessWorker(n_working_procs, scheduler_ip_address, scheduler_port, test_idx)
-        else:
-            assert global_comm.Get_size() == 1, 'pytest_parallel usage error: when scheduling with SLURM, do not launch the scheduling itself in parallel (do NOT use `mpirun ...`)'
+        else: # scheduler
+            assert global_comm.Get_size() == 1, 'pytest_parallel usage error: \
+                                                 when scheduling with SLURM, \
+                                                 do not launch the scheduling itself in parallel \
+                                                 (do NOT use `mpirun -np n pytest...`)'
 
             n_working_procs = int(config.getoption('max_n_proc'))
-            plugin = ProcessScheduler(n_working_procs, scheduler)
+
+            main_invoke_params = ' '.join(config.invocation_params.args)
+            plugin = ProcessScheduler(n_working_procs, main_invoke_params)
     else:
         assert 0
 
     config.pluginmanager.register(plugin, 'pytest_parallel')
 
     # only report to terminal if master process
-    if not should_enable_terminal_reporter(global_comm, scheduler):
+    if not should_enable_terminal_reporter(global_comm, scheduler, slurm_worker):
         terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
         config.pluginmanager.unregister(terminal_reporter)
 
