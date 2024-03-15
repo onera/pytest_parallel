@@ -592,9 +592,9 @@ class DynamicScheduler:
                 report.longrepr = mpi_report.longrepr
 
 
-import datetime
 import subprocess
 import socket
+import pickle
 from . import socket_utils
 
 class ProcessWorker:
@@ -607,21 +607,17 @@ class ProcessWorker:
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
         comm = MPI.COMM_WORLD
-        print(f'self.test_idx = {self.test_idx}')
         item = session.items[self.test_idx]
         item.sub_comm = comm
         item.test_info = {'test_idx': self.test_idx}
         nextitem = None
         run_item_test(item, nextitem, session)
-        print('run_item_test done')
-        print(f'item.test_info = {item.test_info}')
 
         if comm.Get_rank() == 0:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((self.scheduler_ip_address, self.scheduler_port))
-                socket_utils.send(s, str(item.test_info))
+                socket_utils.send(s, pickle.dumps(item.test_info))
 
-        print('sending done')
         return True
       
     @pytest.hookimpl(hookwrapper=True)
@@ -702,45 +698,19 @@ def receive_items(items, session, socket):
     n = len(items)
     #n = 2
     while n>0:
-        print(f'remaining_workers={n} - ',datetime.datetime.now())
         conn, addr = socket.accept()
         with conn:
             msg = socket_utils.recv(conn)
-            test_info = eval(msg) # the worker is supposed to have send a dict with the correct structured information
-            test_idx = test_info['test_idx']
-            item = items[test_idx]
-            item.sub_comm = MPI.COMM_NULL
-            item.info = test_info
+        test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
+        test_idx = test_info['test_idx']
+        item = items[test_idx]
+        item.sub_comm = MPI.COMM_NULL
+        item.info = test_info
 
-            # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
-            nextitem = None  # not known at this point
-            run_item_test(items[test_idx], nextitem, session)
-        ###    print('run_item_test - done')
-        ##test_idx = 2-n
-        ##print('run_item_test')
-        ##item = items[test_idx]
-        ##item.sub_comm = MPI.COMM_NULL
-        ##info = {
-        ##    'test_idx': test_idx,
-        ##    'setup': {
-        ##        'outcome': 'passed',
-        ##        'longrepr': 'setup msg',
-        ##    },
-        ##    'call': {
-        ##        'outcome': 'passed',
-        ##        'longrepr': 'call msg',
-        ##    },
-        ##    'teardown': {
-        ##        'outcome': 'passed',
-        ##        'longrepr': 'teardown msg',
-        ##    },
-        ##}
-        ##item.info = info
-        ##nextitem = None  # not known at this point
-        ##run_item_test(item, nextitem, session) # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
-        ##print('run_item_test - done')
+        # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+        nextitem = None  # not known at this point
+        run_item_test(items[test_idx], nextitem, session)
         n -= 1
-    print('recv done',datetime.datetime.now())
 
 class ProcessScheduler:
     def __init__(self, n_working_procs, main_invoke_params):
