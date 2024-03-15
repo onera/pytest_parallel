@@ -20,23 +20,46 @@ def pytest_addoption(parser):
         type='choice',
         choices=['sequential', 'static', 'dynamic', 'shell', 'slurm'],
         default='sequential',
+        help='Method used by pytest_parallel to schedule tests',
     )
 
-    parser.addoption('--max_n_proc', dest='max_n_proc', type=int)
+    parser.addoption('--slurm_options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
 
     # Private to SLURM scheduler
-    parser.addoption('--_worker', dest='_worker', action='store_true')
-    parser.addoption('--_scheduler_ip_address', dest='_scheduler_ip_address', type=str)
-    parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int)
-    parser.addoption('--_test_idx'    , dest='_test_idx'    , type=int)
+    parser.addoption('--_worker', dest='_worker', action='store_true', help='Internal pytest_parallel option')
+    parser.addoption('--_scheduler_ip_address', dest='_scheduler_ip_address', type=str, help='Internal pytest_parallel option')
+    parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int, help='Internal pytest_parallel option')
+    parser.addoption('--_test_idx'    , dest='_test_idx'    , type=int, help='Internal pytest_parallel option')
+
+    # create SBATCH header
+def parse_slurm_options(opt_str):
+    opts = opt_str.split()
+    for opt in opts:
+      if '--ntasks' in opt:
+          assert opt[0:len('--ntasks')] == '--ntasks', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
+          ntasks_val = opt[len('--ntasks'):]
+          assert ntasks_val[0]==' ' or ntasks_val[0]=='=', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
+          try:
+              ntasks = int(ntasks_val[1:])
+          except ValueError:
+              assert ntasks_val[0]==' ' or ntasks_val[0]=='=', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
+          return ntasks, opts
+
+    assert 0, 'pytest_parallel SLURM scheduler: you need specify --ntasks in slurm_options'
 
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     global_comm = MPI.COMM_WORLD
 
+    # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
-    slurm_worker = config.getoption('_worker') # only meaningful if scheduler == 'slurm'
+    slurm_options = config.getoption('slurm_options')
+    slurm_worker = config.getoption('_worker')
+    ## !slurm => !slurm_worker
+    if scheduler != 'slurm':
+        assert not slurm_worker
+        assert not slurm_options
 
     if scheduler == 'sequential':
         plugin = SequentialScheduler(global_comm)
@@ -46,22 +69,22 @@ def pytest_configure(config):
         inter_comm = spawn_master_process(global_comm)
         plugin = DynamicScheduler(global_comm, inter_comm)
     elif scheduler == 'slurm':
-        if config.getoption('_worker'):
-            n_working_procs = config.getoption('max_n_proc')
+        if slurm_worker:
             scheduler_ip_address = config.getoption('_scheduler_ip_address')
             scheduler_port = config.getoption('_scheduler_port')
             test_idx = config.getoption('_test_idx')
-            plugin = ProcessWorker(n_working_procs, scheduler_ip_address, scheduler_port, test_idx)
+            plugin = ProcessWorker(scheduler_ip_address, scheduler_port, test_idx)
         else: # scheduler
             assert global_comm.Get_size() == 1, 'pytest_parallel usage error: \
                                                  when scheduling with SLURM, \
                                                  do not launch the scheduling itself in parallel \
                                                  (do NOT use `mpirun -np n pytest...`)'
 
-            n_working_procs = int(config.getoption('max_n_proc'))
-
+            # List of all invoke options except slurm options
             main_invoke_params = ' '.join(config.invocation_params.args)
-            plugin = ProcessScheduler(n_working_procs, main_invoke_params)
+            main_invoke_params = ''.join( main_invoke_params.split(f'--slurm_options={slurm_options}') )
+            slurm_ntasks, slurm_options = parse_slurm_options(slurm_options)
+            plugin = ProcessScheduler(main_invoke_params, slurm_ntasks, slurm_options)
     else:
         assert 0
 

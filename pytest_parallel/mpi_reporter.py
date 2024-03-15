@@ -596,10 +596,10 @@ import subprocess
 import socket
 import pickle
 from . import socket_utils
+from pathlib import Path
 
 class ProcessWorker:
-    def __init__(self, n_working_procs, scheduler_ip_address, scheduler_port, test_idx):
-        self.n_working_procs = n_working_procs
+    def __init__(self, scheduler_ip_address, scheduler_port, test_idx):
         self.scheduler_ip_address = scheduler_ip_address
         self.scheduler_port = scheduler_port
         self.test_idx = test_idx
@@ -640,59 +640,71 @@ class ProcessWorker:
 
 
 
-LOCALHOST = '127.0.0.1'
-def submit_items(items_to_run, socket, n_working_procs, main_invoke_params):
+def replace_sub_strings(s, subs, replacement):
+  res = s
+  for sub in subs:
+    res = res.replace(sub,replacement)
+  return res
+
+def remove_exotic_chars(s):
+  return replace_sub_strings(str(s), ['[',']','/', ':'], '_')
+
+def submit_items(items_to_run, socket, main_invoke_params, slurm_options):
     # setup master's socket
     SCHEDULER_IP_ADDRESS='10.33.240.8' # spiro07-clu
     socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
     socket.listen()
     port = socket.getsockname()[1]
 
-    # sort item by comm size
+    # generate SLURM header options
+    slurm_header = ''
+    for opt in slurm_options:
+        slurm_header += f'#SBATCH {opt}\n'
+
+    # sort item by comm size to launch bigger first (Note: in case SLURM prioritize first-received items)
     items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
 
     # launch srun for each item
-    cmds = ''
+    cmds  = f'WORKER_FLAGS="--_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"\n'
+    cmds += f'INVOKE_FLAGS="{main_invoke_params}"\n\n'
     for item in items:
         test_idx = item.original_index
         cmd =  f'srun --exclusive --ntasks={item.n_proc} -l'
-        cmd += f' python3 -u -m pytest {main_invoke_params}'
-        cmd += f' --_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS}'
-        cmd += f' --_scheduler_port={port} --_test_idx={test_idx}'
+        cmd += f' python3 -u -m pytest $WORKER_FLAGS $INVOKE_FLAGS --_test_idx={test_idx}'
+        cmd += f' > {test_idx}.out 2> {test_idx}.err'
+        #test_out_file_base = f'pytest_parallel_slurm/{remove_exotic_chars(item.nodeid)}'
+        #cmd += f' > {test_out_file_base}.out 2> {test_out_file_base}.err'
+        cmd += ' &\n' # launch everything in parallel
+        cmds += cmd
+    cmds += 'wait\n'
 
-        #cmd += f' python3 -u ~/dev/pytest_parallel/slurm/worker.py {SCHEDULER_IP_ADDRESS} {port} {test_idx}'
-        cmd += f' > out_{test_idx}.txt 2> err_{test_idx}.txt'
-        cmd += ' &' # launch everything in parallel
-        cmds += cmd + '\n'
-
+#SBATCH --ntasks={slurm_ntasks}
+#SBATCH --time 00:10:00
+#SBATCH --qos=co_short_std
+##SBATCH --nodes=4-4
+#SBATCH --nodes=1-1
     pytest_slurm = f'''#!/bin/bash
 
-#SBATCH --job-name=pytest_par
-#SBATCH --time 00:30:00
-#SBATCH --qos=co_short_std
-#SBATCH --ntasks={n_working_procs}
-##SBATCH --nodes=2-2
-#SBATCH --nodes=1-1
-#SBATCH --output=slurm.%j.out
-#SBATCH --error=slurm.%j.err
+#SBATCH --job-name=pytest_parallel
+#SBATCH --output=pytest_parallel_slurm/slurm.%j.out
+#SBATCH --error=pytest_parallel_slurm/slurm.%j.err
+{slurm_header}
 
-#source /scratchm/sonics/dist/source.sh --env maia --compiler gcc@12 --mpi intel-oneapi
-module load socle-cfd/6.0-intel2220-impi
-export PYTHONPATH=/stck/bberthou/dev/pytest_parallel:$PYTHONPATH
-export PYTEST_PLUGINS=pytest_parallel.plugin
 {cmds}
-wait
 '''
-
-    with open('pytest_slurm.sh','w') as f:
+    Path('pytest_parallel_slurm').mkdir(exist_ok=True)
+    with open('pytest_parallel_slurm/job.sh','w') as f:
       f.write(pytest_slurm)
 
     ## submit SLURM job
-    sbatch_cmd = 'sbatch pytest_slurm.sh'
-    p = subprocess.Popen([sbatch_cmd], shell=True)
+    sbatch_cmd = 'sbatch --parsable pytest_parallel_slurm/job.sh'
+    p = subprocess.Popen([sbatch_cmd], shell=True, stdout=subprocess.PIPE)
     print('Submitting tests to SLURM...')
     returncode = p.wait()
+    slurm_job_id = int(p.stdout.read())
     assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
+    print(f'SLURM job {slurm_job_id} has been submitted')
+    return slurm_job_id
 
 def receive_items(items, session, socket):
     n = len(items)
@@ -713,11 +725,13 @@ def receive_items(items, session, socket):
         n -= 1
 
 class ProcessScheduler:
-    def __init__(self, n_working_procs, main_invoke_params):
-        self.n_working_procs = n_working_procs
-        self.current_item_requests = []
+    def __init__(self, main_invoke_params, slurm_ntasks, slurm_options):
         self.main_invoke_params = main_invoke_params
+        self.slurm_ntasks = slurm_ntasks
+        self.slurm_options = slurm_options
+
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
+        self.slurm_job_id = None
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
@@ -747,7 +761,7 @@ class ProcessScheduler:
         add_n_procs(session.items)
 
         # isolate skips
-        has_enough_procs = lambda item: item.n_proc <= self.n_working_procs
+        has_enough_procs = lambda item: item.n_proc <= self.slurm_ntasks
         items_to_run, items_to_skip = partition(session.items, has_enough_procs)
 
         # run skipped
@@ -758,10 +772,16 @@ class ProcessScheduler:
             run_item_test(item, nextitem, session)
 
         # schedule tests to run
-        submit_items(items_to_run, self.socket, self.n_working_procs, self.main_invoke_params)
+        self.slurm_job_id = submit_items(items_to_run, self.socket, self.main_invoke_params, self.slurm_options)
         receive_items(session.items, session, self.socket)
 
         return True
+
+    @pytest.hookimpl()
+    def pytest_keyboard_interrupt(excinfo):
+        if excinfo.slurm_job_id is not None:
+            print(f'Calling `scancel {excinfo.slurm_job_id}`')
+            subprocess.run(['scancel',str(excinfo.slurm_job_id)])
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item):

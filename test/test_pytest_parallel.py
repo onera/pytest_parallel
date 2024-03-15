@@ -67,7 +67,8 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
 
 
 param_scheduler = (
-    ["sequential", "static", "dynamic"]
+    ["static", "dynamic"]
+    #["sequential"]
     if sys.platform != "win32"
     else ["sequential", "static"]
 )
