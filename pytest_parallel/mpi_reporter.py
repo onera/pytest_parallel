@@ -650,8 +650,14 @@ def remove_exotic_chars(s):
   return replace_sub_strings(str(s), ['[',']','/', ':'], '_')
 
 def submit_items(items_to_run, socket, main_invoke_params, slurm_options):
+    # Find IP our address
+    r = subprocess.run(['hostname','-I'], stdout=subprocess.PIPE)
+    assert r.returncode==0, f'SLURM scheduler: error getting IP address of {socket.gethostname()} with `hostname -I`'
+    ips = r.stdout.decode("utf-8").strip().split()
+    assert len(ips) > 0, f'SLURM scheduler: error getting IP address of {socket.gethostname()}, `hostname -I` returned no address'
+    SCHEDULER_IP_ADDRESS = ips[0]
+
     # setup master's socket
-    SCHEDULER_IP_ADDRESS='10.33.240.8' # spiro07-clu
     socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
     socket.listen()
     port = socket.getsockname()[1]
@@ -678,11 +684,6 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_options):
         cmds += cmd
     cmds += 'wait\n'
 
-#SBATCH --ntasks={slurm_ntasks}
-#SBATCH --time 00:10:00
-#SBATCH --qos=co_short_std
-##SBATCH --nodes=4-4
-#SBATCH --nodes=1-1
     pytest_slurm = f'''#!/bin/bash
 
 #SBATCH --job-name=pytest_parallel
@@ -706,10 +707,8 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_options):
     print(f'SLURM job {slurm_job_id} has been submitted')
     return slurm_job_id
 
-def receive_items(items, session, socket):
-    n = len(items)
-    #n = 2
-    while n>0:
+def receive_items(items, session, socket, n_item_to_recv):
+    while n_item_to_recv>0:
         conn, addr = socket.accept()
         with conn:
             msg = socket_utils.recv(conn)
@@ -722,7 +721,7 @@ def receive_items(items, session, socket):
         # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
         nextitem = None  # not known at this point
         run_item_test(items[test_idx], nextitem, session)
-        n -= 1
+        n_item_to_recv -= 1
 
 class ProcessScheduler:
     def __init__(self, main_invoke_params, slurm_ntasks, slurm_options):
@@ -772,8 +771,10 @@ class ProcessScheduler:
             run_item_test(item, nextitem, session)
 
         # schedule tests to run
-        self.slurm_job_id = submit_items(items_to_run, self.socket, self.main_invoke_params, self.slurm_options)
-        receive_items(session.items, session, self.socket)
+        n_item_to_receive = len(items_to_run)
+        if n_item_to_receive > 0:
+          self.slurm_job_id = submit_items(items_to_run, self.socket, self.main_invoke_params, self.slurm_options)
+          receive_items(session.items, session, self.socket, n_item_to_receive)
 
         return True
 

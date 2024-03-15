@@ -1,9 +1,9 @@
 [=]+ test session starts [=]+
 platform [^\n]*
 cachedir: [^\n]*
-?(metadata: [^\n]*)?
+?(?:metadata: [^\n]*)?
 rootdir: [^\n]*
-?(plugins: [^\n]*)?
+?(?:plugins: [^\n]*)?
 collecting ... [\s]*collected 8 items[\s]*
 
 (?# [This is a comment until the closing parenthesis]
