@@ -18,12 +18,14 @@ def pytest_addoption(parser):
         '--scheduler',
         dest='scheduler',
         type='choice',
-        choices=['sequential', 'static', 'dynamic', 'shell', 'slurm'],
+        choices=['sequential', 'static', 'dynamic', 'slurm'],
         default='sequential',
         help='Method used by pytest_parallel to schedule tests',
     )
 
-    parser.addoption('--slurm_options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
+    parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
+    parser.addoption('--slurm-additional-cmds', dest='slurm_additional_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
+    parser.addoption('--detach', dest='detach', action='store_true', help='Detach SLURM jobs: do not send reports to the scheduling process (useful to launch slurm job.sh separately)')
 
     # Private to SLURM scheduler
     parser.addoption('--_worker', dest='_worker', action='store_true', help='Internal pytest_parallel option')
@@ -45,7 +47,7 @@ def parse_slurm_options(opt_str):
               assert ntasks_val[0]==' ' or ntasks_val[0]=='=', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
           return ntasks, opts
 
-    assert 0, 'pytest_parallel SLURM scheduler: you need specify --ntasks in slurm_options'
+    assert 0, 'pytest_parallel SLURM scheduler: you need specify `--ntasks` in `--slurm-options`'
 
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
@@ -55,11 +57,13 @@ def pytest_configure(config):
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
     slurm_options = config.getoption('slurm_options')
+    slurm_additional_cmds = config.getoption('slurm_additional_cmds')
     slurm_worker = config.getoption('_worker')
-    ## !slurm => !slurm_worker
+    detach = config.getoption('detach')
     if scheduler != 'slurm':
         assert not slurm_worker
         assert not slurm_options
+        assert not slurm_additional_cmds
 
     if scheduler == 'sequential':
         plugin = SequentialScheduler(global_comm)
@@ -73,7 +77,7 @@ def pytest_configure(config):
             scheduler_ip_address = config.getoption('_scheduler_ip_address')
             scheduler_port = config.getoption('_scheduler_port')
             test_idx = config.getoption('_test_idx')
-            plugin = ProcessWorker(scheduler_ip_address, scheduler_port, test_idx)
+            plugin = ProcessWorker(scheduler_ip_address, scheduler_port, test_idx, detach)
         else: # scheduler
             assert global_comm.Get_size() == 1, 'pytest_parallel usage error: \
                                                  when scheduling with SLURM, \
@@ -81,10 +85,18 @@ def pytest_configure(config):
                                                  (do NOT use `mpirun -np n pytest...`)'
 
             # List of all invoke options except slurm options
-            main_invoke_params = ' '.join(config.invocation_params.args)
-            main_invoke_params = ''.join( main_invoke_params.split(f'--slurm_options={slurm_options}') )
+            ## reconstruct complete invoke string
+            quoted_invoke_params = []
+            for arg in config.invocation_params.args:
+                if ' ' in arg and not '--slurm-options' in arg:
+                    quoted_invoke_params.append("'"+arg+"'")
+                else:
+                    quoted_invoke_params.append(arg)
+            main_invoke_params = ' '.join(quoted_invoke_params)
+            ## pull `--slurm-options` appart for special treatement
+            main_invoke_params = ''.join( main_invoke_params.split(f'--slurm-options={slurm_options}') )
             slurm_ntasks, slurm_options = parse_slurm_options(slurm_options)
-            plugin = ProcessScheduler(main_invoke_params, slurm_ntasks, slurm_options)
+            plugin = ProcessScheduler(main_invoke_params, slurm_ntasks, slurm_options, slurm_additional_cmds, detach)
     else:
         assert 0
 
@@ -100,9 +112,9 @@ def pytest_configure(config):
 @pytest.fixture
 def comm(request):
     '''
-    Only return a previous MPI Communicator (build at prepare step )
+    Returns the MPI Communicator created by pytest_parallel
     '''
-    return request.node.sub_comm  # TODO clean
+    return request.node.sub_comm
 
 
 # --------------------------------------------------------------------------
