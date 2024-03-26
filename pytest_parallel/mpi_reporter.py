@@ -651,8 +651,9 @@ class ProcessWorker:
     def pytest_runtest_logreport(self, report):
         assert report.when in ("setup", "call", "teardown")  # only known tags
         gather_report_on_local_rank_0(report)
-        report.test_info.update({report.when: {'outcome': report.outcome, 'longrepr': report.longrepr}})
-
+        report.test_info.update({report.when: {'outcome' : report.outcome,
+                                               'longrepr': report.longrepr,
+                                               'duration': report.duration, }})
 
 
 def replace_sub_strings(s, subs, replacement):
@@ -827,3 +828,4 @@ class ProcessScheduler:
 
             report.outcome  = report.info[report.when]['outcome']
             report.longrepr = report.info[report.when]['longrepr']
+            report.duration = report.info[report.when]['duration']
