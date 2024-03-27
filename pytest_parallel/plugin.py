@@ -38,10 +38,7 @@ def parse_slurm_options(opt_str):
           assert opt[0:len('--ntasks')] == '--ntasks', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
           ntasks_val = opt[len('--ntasks'):]
           assert ntasks_val[0]==' ' or ntasks_val[0]=='=', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
-          try:
-              ntasks = int(ntasks_val[1:])
-          except ValueError:
-              assert ntasks_val[0]==' ' or ntasks_val[0]=='=', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
+          ntasks = int(ntasks_val[1:])
           return ntasks, opts
 
     assert 0, 'pytest_parallel SLURM scheduler: you need specify `--ntasks` in `--slurm-options`'
