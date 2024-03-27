@@ -4,13 +4,10 @@
 import tempfile
 import pytest
 from pathlib import Path
-from mpi4py import MPI
-
-
-from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
-from .mpi_reporter import ProcessScheduler, ProcessWorker
-from .utils import spawn_master_process, should_enable_terminal_reporter
-
+# Note:
+#    we need to NOT import mpi4py when pytest_parallel
+#    is called with the SLURM scheduler
+#    because it can mess SLURM `srun`
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -52,8 +49,6 @@ def parse_slurm_options(opt_str):
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
-    global_comm = MPI.COMM_WORLD
-
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
     slurm_options = config.getoption('slurm_options')
@@ -61,49 +56,56 @@ def pytest_configure(config):
     slurm_worker = config.getoption('_worker')
     detach = config.getoption('detach')
     if scheduler != 'slurm':
-        assert not slurm_worker
-        assert not slurm_options
-        assert not slurm_additional_cmds
+        assert not slurm_worker, 'Option `--slurm-worker` only available when `--scheduler=slurm`'
+        assert not slurm_options, 'Option `--slurm-options` only available when `--scheduler=slurm`'
+        assert not slurm_additional_cmds, 'Option `--slurm-additional-cmds` only available when `--scheduler=slurm`'
 
-    if scheduler == 'sequential':
-        plugin = SequentialScheduler(global_comm)
-    elif scheduler == 'static':
-        plugin = StaticScheduler(global_comm)
-    elif scheduler == 'dynamic':
-        inter_comm = spawn_master_process(global_comm)
-        plugin = DynamicScheduler(global_comm, inter_comm)
-    elif scheduler == 'slurm':
-        if slurm_worker:
+    if scheduler == 'slurm' and not slurm_worker:
+        from .process_scheduler import ProcessScheduler
+
+        enable_terminal_reporter = True
+
+        # List of all invoke options except slurm options
+        ## reconstruct complete invoke string
+        quoted_invoke_params = []
+        for arg in config.invocation_params.args:
+            if ' ' in arg and not '--slurm-options' in arg:
+                quoted_invoke_params.append("'"+arg+"'")
+            else:
+                quoted_invoke_params.append(arg)
+        main_invoke_params = ' '.join(quoted_invoke_params)
+        ## pull apart `--slurm-options` for special treatement
+        main_invoke_params = ''.join( main_invoke_params.split(f'--slurm-options={slurm_options}') )
+        slurm_ntasks, slurm_options = parse_slurm_options(slurm_options)
+        plugin = ProcessScheduler(main_invoke_params, slurm_ntasks, slurm_options, slurm_additional_cmds, detach)
+
+    else:
+        from mpi4py import MPI
+        from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler, ProcessWorker
+        from .utils_mpi import spawn_master_process, should_enable_terminal_reporter
+
+        global_comm = MPI.COMM_WORLD
+        enable_terminal_reporter = should_enable_terminal_reporter(global_comm, scheduler)
+
+        if scheduler == 'sequential':
+            plugin = SequentialScheduler(global_comm)
+        elif scheduler == 'static':
+            plugin = StaticScheduler(global_comm)
+        elif scheduler == 'dynamic':
+            inter_comm = spawn_master_process(global_comm)
+            plugin = DynamicScheduler(global_comm, inter_comm)
+        elif scheduler == 'slurm' and slurm_worker:
             scheduler_ip_address = config.getoption('_scheduler_ip_address')
             scheduler_port = config.getoption('_scheduler_port')
             test_idx = config.getoption('_test_idx')
             plugin = ProcessWorker(scheduler_ip_address, scheduler_port, test_idx, detach)
-        else: # scheduler
-            assert global_comm.Get_size() == 1, 'pytest_parallel usage error: \
-                                                 when scheduling with SLURM, \
-                                                 do not launch the scheduling itself in parallel \
-                                                 (do NOT use `mpirun -np n pytest...`)'
-
-            # List of all invoke options except slurm options
-            ## reconstruct complete invoke string
-            quoted_invoke_params = []
-            for arg in config.invocation_params.args:
-                if ' ' in arg and not '--slurm-options' in arg:
-                    quoted_invoke_params.append("'"+arg+"'")
-                else:
-                    quoted_invoke_params.append(arg)
-            main_invoke_params = ' '.join(quoted_invoke_params)
-            ## pull `--slurm-options` appart for special treatement
-            main_invoke_params = ''.join( main_invoke_params.split(f'--slurm-options={slurm_options}') )
-            slurm_ntasks, slurm_options = parse_slurm_options(slurm_options)
-            plugin = ProcessScheduler(main_invoke_params, slurm_ntasks, slurm_options, slurm_additional_cmds, detach)
-    else:
-        assert 0
+        else:
+            assert 0
 
     config.pluginmanager.register(plugin, 'pytest_parallel')
 
     # only report to terminal if master process
-    if not should_enable_terminal_reporter(global_comm, scheduler, slurm_worker):
+    if not enable_terminal_reporter:
         terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
         config.pluginmanager.unregister(terminal_reporter)
 
