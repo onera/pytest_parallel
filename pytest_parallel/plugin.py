@@ -20,8 +20,14 @@ def pytest_addoption(parser):
         help='Method used by pytest_parallel to schedule tests',
     )
 
+    parser.addoption('--n-workers', dest='n_workers', type=int, help='Max number of processes to run in parallel')
+    parser.addoption('--scheduler-ip', dest='scheduler_ip', type=str, help='IP address of the SLURM-scheduling pytest process (i.e. IP of the host node where you launch pytest). Defaults to first IP returned by `hostname -I`')
+
     parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
     parser.addoption('--slurm-additional-cmds', dest='slurm_additional_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
+    parser.addoption('--slurm-file', dest='slurm_file', type=str, help='Path to file containing header of SLURM job')
+    parser.addoption('--slurm-sub-command', dest='slurm_sub_command', type=str, help='SLURM submission command (defaults to `sbatch`)')
+
     parser.addoption('--detach', dest='detach', action='store_true', help='Detach SLURM jobs: do not send reports to the scheduling process (useful to launch slurm job.sh separately)')
 
     # Private to SLURM scheduler
@@ -30,34 +36,34 @@ def pytest_addoption(parser):
     parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int, help='Internal pytest_parallel option')
     parser.addoption('--_test_idx'    , dest='_test_idx'    , type=int, help='Internal pytest_parallel option')
 
-    # create SBATCH header
-def parse_slurm_options(opt_str):
-    opts = opt_str.split()
-    for opt in opts:
-      if '--ntasks' in opt:
-          assert opt[0:len('--ntasks')] == '--ntasks', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
-          ntasks_val = opt[len('--ntasks'):]
-          assert ntasks_val[0]==' ' or ntasks_val[0]=='=', 'pytest_parallel SLURM scheduler: parsing error for `--ntasks`'
-          ntasks = int(ntasks_val[1:])
-          return ntasks, opts
-
-    assert 0, 'pytest_parallel SLURM scheduler: you need specify `--ntasks` in `--slurm-options`'
-
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
+    n_workers = config.getoption('n_workers')
+    scheduler_ip = config.getoption('scheduler_ip')
     slurm_options = config.getoption('slurm_options')
     slurm_additional_cmds = config.getoption('slurm_additional_cmds')
     slurm_worker = config.getoption('_worker')
+    slurm_file = config.getoption('slurm_file')
+    slurm_sub_command = config.getoption('slurm_sub_command')
     detach = config.getoption('detach')
     if scheduler != 'slurm':
         assert not slurm_worker, 'Option `--slurm-worker` only available when `--scheduler=slurm`'
         assert not slurm_options, 'Option `--slurm-options` only available when `--scheduler=slurm`'
         assert not slurm_additional_cmds, 'Option `--slurm-additional-cmds` only available when `--scheduler=slurm`'
+        assert not slurm_file, 'Option `--slurm-file` only available when `--scheduler=slurm`'
+        assert not scheduler_ip, 'Option `--scheduler-ip` only available when `--scheduler=slurm`'
 
     if scheduler == 'slurm' and not slurm_worker:
+        assert slurm_options or slurm_file, 'You need to specify either `--slurm-options` or `--slurm-file` when `--scheduler=slurm`'
+        if slurm_options:
+            assert not slurm_file, 'You need to specify either `--slurm-options` or `--slurm-file`, but not both'
+        if slurm_file:
+            assert not slurm_options, 'You need to specify either `--slurm-options` or `--slurm-file`, but not both'
+            assert not slurm_additional_cmds, 'You cannot specify `--slurm-additional-cmds` together with `--slurm-file`'
+
         from .process_scheduler import ProcessScheduler
 
         enable_terminal_reporter = True
@@ -73,8 +79,15 @@ def pytest_configure(config):
         main_invoke_params = ' '.join(quoted_invoke_params)
         ## pull apart `--slurm-options` for special treatement
         main_invoke_params = ''.join( main_invoke_params.split(f'--slurm-options={slurm_options}') )
-        slurm_ntasks, slurm_options = parse_slurm_options(slurm_options)
-        plugin = ProcessScheduler(main_invoke_params, slurm_ntasks, slurm_options, slurm_additional_cmds, detach)
+        slurm_option_list = slurm_options.split() if slurm_options is not None else []
+        slurm_conf = {
+            'options'        : slurm_option_list,
+            'additional_cmds': slurm_additional_cmds,
+            'file'           : slurm_file,
+            'sub_command'    : slurm_sub_command,
+            'scheduler_ip'   : scheduler_ip,
+        }
+        plugin = ProcessScheduler(main_invoke_params, n_workers, slurm_conf, detach)
 
     else:
         from mpi4py import MPI

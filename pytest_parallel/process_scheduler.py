@@ -6,6 +6,7 @@ from pathlib import Path
 from . import socket_utils
 from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
 from .algo import partition
+#from mpi4py import MPI
 
 
 def mark_skip(item, slurm_ntasks):
@@ -23,13 +24,24 @@ def replace_sub_strings(s, subs, replacement):
 def remove_exotic_chars(s):
   return replace_sub_strings(str(s), ['[',']','/', ':'], '_')
 
-def submit_items(items_to_run, socket, main_invoke_params, slurm_additional_cmds, slurm_options):
+def parse_job_id_from_submission_output(s):
+    # At this point, we are trying to guess -_-
+    # Here we supposed that the command for submitting the job
+    #    returned string with only one number,
+    #    and that this number is the job id
+    import re
+    return int(re.search(r'\d+', str(s)).group())
+
+def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_conf):
     # Find IP our address
-    r = subprocess.run(['hostname','-I'], stdout=subprocess.PIPE)
-    assert r.returncode==0, f'SLURM scheduler: error getting IP address of {socket.gethostname()} with `hostname -I`'
-    ips = r.stdout.decode("utf-8").strip().split()
-    assert len(ips) > 0, f'SLURM scheduler: error getting IP address of {socket.gethostname()}, `hostname -I` returned no address'
-    SCHEDULER_IP_ADDRESS = ips[0]
+    if slurm_conf['scheduler_ip'] is None:
+        r = subprocess.run(['hostname','-I'], stdout=subprocess.PIPE)
+        assert r.returncode==0, f'SLURM scheduler: error getting IP address of {socket.gethostname()} with `hostname -I`'
+        ips = r.stdout.decode("utf-8").strip().split()
+        assert len(ips) > 0, f'SLURM scheduler: error getting IP address of {socket.gethostname()}, `hostname -I` returned no address'
+        SCHEDULER_IP_ADDRESS = ips[0]
+    else:
+        SCHEDULER_IP_ADDRESS = slurm_conf['scheduler_ip']
 
     # setup master's socket
     socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
@@ -37,9 +49,21 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_additional_cmds
     port = socket.getsockname()[1]
 
     # generate SLURM header options
-    slurm_header = ''
-    for opt in slurm_options:
-        slurm_header += f'#SBATCH {opt}\n'
+    if slurm_conf['file'] is not None:
+        with open(slurm_conf['file']) as f:
+            slurm_header = f.read()
+        # Note: 
+        #    slurm_ntasks is supposed to be <= to the number of the ntasks submitted to slurm
+        #    but since the header file can be arbitrary, we have no way to check at this point
+    else:
+        slurm_header  = '#!/bin/bash\n'
+        slurm_header += '\n'
+        slurm_header += '#SBATCH --job-name=pytest_parallel\n'
+        slurm_header += '#SBATCH --output=pytest_slurm/slurm.%j.out\n'
+        slurm_header += '#SBATCH --error=pytest_slurm/slurm.%j.err\n'
+        for opt in slurm_conf['options']:
+            slurm_header += f'#SBATCH {opt}\n'
+        slurm_header += f'#SBATCH --ntasks={slurm_ntasks}'
 
     # sort item by comm size to launch bigger first (Note: in case SLURM prioritize first-received items)
     items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
@@ -47,8 +71,8 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_additional_cmds
     # launch srun for each item
     worker_flags=f"--_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
     cmds = ''
-    if slurm_additional_cmds is not None:
-        cmds += f'{slurm_additional_cmds}\n'
+    if slurm_conf['additional_cmds'] is not None:
+        cmds += slurm_conf['additional_cmds'] + '\n'
     for item in items:
         test_idx = item.original_index
         test_out_file_base = f'pytest_slurm/{remove_exotic_chars(item.nodeid)}'
@@ -59,26 +83,27 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_additional_cmds
         cmds += cmd
     cmds += 'wait\n'
 
-    pytest_slurm = f'''#!/bin/bash
-
-#SBATCH --job-name=pytest_parallel
-#SBATCH --output=pytest_slurm/slurm.%j.out
-#SBATCH --error=pytest_slurm/slurm.%j.err
-{slurm_header}
-
-{cmds}
-'''
+    pytest_slurm = f'{slurm_header}\n\n{cmds}'
     Path('pytest_slurm').mkdir(exist_ok=True)
     with open('pytest_slurm/job.sh','w') as f:
       f.write(pytest_slurm)
 
     # submit SLURM job
-    sbatch_cmd = 'sbatch --parsable pytest_slurm/job.sh'
+    if slurm_conf['sub_command'] is None:
+        sbatch_cmd = 'sbatch --parsable pytest_slurm/job.sh'
+    else:
+        sbatch_cmd = slurm_conf['sub_command'] + ' pytest_slurm/job.sh'
+
     p = subprocess.Popen([sbatch_cmd], shell=True, stdout=subprocess.PIPE)
     print('Submitting tests to SLURM...')
     returncode = p.wait()
     assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
-    slurm_job_id = int(p.stdout.read())
+
+    if slurm_conf['sub_command'] is None:
+        slurm_job_id = int(p.stdout.read())
+    else:
+        slurm_job_id = parse_job_id_from_submission_output(p.stdout.read())
+
     print(f'SLURM job {slurm_job_id} has been submitted')
     return slurm_job_id
 
@@ -101,11 +126,10 @@ def receive_items(items, session, socket, n_item_to_recv):
         n_item_to_recv -= 1
 
 class ProcessScheduler:
-    def __init__(self, main_invoke_params, slurm_ntasks, slurm_options, slurm_additional_cmds, detach):
+    def __init__(self, main_invoke_params, slurm_ntasks, slurm_conf, detach):
         self.main_invoke_params    = main_invoke_params
         self.slurm_ntasks          = slurm_ntasks
-        self.slurm_options         = slurm_options
-        self.slurm_additional_cmds = slurm_additional_cmds
+        self.slurm_conf            = slurm_conf
         self.detach                = detach
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
@@ -152,7 +176,7 @@ class ProcessScheduler:
         # schedule tests to run
         n_item_to_receive = len(items_to_run)
         if n_item_to_receive > 0:
-          self.slurm_job_id = submit_items(items_to_run, self.socket, self.main_invoke_params, self.slurm_additional_cmds, self.slurm_options)
+          self.slurm_job_id = submit_items(items_to_run, self.socket, self.main_invoke_params, self.slurm_ntasks, self.slurm_conf)
           if not self.detach: # The job steps are supposed to send their reports
               receive_items(session.items, session, self.socket, n_item_to_receive)
 
