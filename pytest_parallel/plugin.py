@@ -36,6 +36,19 @@ def pytest_addoption(parser):
     parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int, help='Internal pytest_parallel option')
     parser.addoption('--_test_idx'    , dest='_test_idx'    , type=int, help='Internal pytest_parallel option')
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_load_initial_conftests():
+    import sys
+    assert 'mpi4py.MPI' not in sys.modules, 'Internal pytest_parallel error: mpi4py.MPI should not be imported' \
+                                            ' when we are about to register and environment for SLURM' \
+                                            ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
+                                            ' and SLURM does not like that)'
+
+    import subprocess
+    r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
+    assert r.returncode==0, 'SLURM scheduler: error when writing `env` to `pytest_slurm/env_vars.sh`'
+    pytest._pytest_parallel_env_vars = r.stdout
+
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
