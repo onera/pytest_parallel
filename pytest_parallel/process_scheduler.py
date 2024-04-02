@@ -34,14 +34,16 @@ def parse_job_id_from_submission_output(s):
 
 def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_conf):
     # Find IP our address
-    if slurm_conf['scheduler_ip'] is None:
-        r = subprocess.run(['hostname','-I'], stdout=subprocess.PIPE)
-        assert r.returncode==0, f'SLURM scheduler: error getting IP address of {socket.gethostname()} with `hostname -I`'
-        ips = r.stdout.decode("utf-8").strip().split()
-        assert len(ips) > 0, f'SLURM scheduler: error getting IP address of {socket.gethostname()}, `hostname -I` returned no address'
-        SCHEDULER_IP_ADDRESS = ips[0]
+    r = subprocess.run(['hostname','-I'], stdout=subprocess.PIPE)
+    assert r.returncode==0, f'SLURM scheduler: error getting IP address of {socket.gethostname()} with `hostname -I`'
+    ips = r.stdout.decode("utf-8").strip().split()
+    assert len(ips) > 0, f'SLURM scheduler: error getting IP address of {socket.gethostname()}, `hostname -I` returned no address'
+    if slurm_conf['scheduler_ip'] is not None:
+        given_ip = slurm_conf['scheduler_ip']
+        assert given_ip in ips, f'address {given_ip} given by `--scheduler-ip` is in those given by `hostname -I`'
+        SCHEDULER_IP_ADDRESS = given_ip
     else:
-        SCHEDULER_IP_ADDRESS = slurm_conf['scheduler_ip']
+        SCHEDULER_IP_ADDRESS = ips[0]
 
     # setup master's socket
     socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
