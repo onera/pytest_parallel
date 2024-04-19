@@ -91,7 +91,9 @@ def pytest_configure(config):
                 quoted_invoke_params.append(arg)
         main_invoke_params = ' '.join(quoted_invoke_params)
         ## pull apart `--slurm-options` for special treatement
-        main_invoke_params = ''.join( main_invoke_params.split(f'--slurm-options={slurm_options}') )
+        main_invoke_params = main_invoke_params.replace(f'--slurm-options={slurm_options}', '')
+        for file_or_dir in config.option.file_or_dir:
+          main_invoke_params = main_invoke_params.replace(file_or_dir, '')
         slurm_option_list = slurm_options.split() if slurm_options is not None else []
         slurm_conf = {
             'options'        : slurm_option_list,

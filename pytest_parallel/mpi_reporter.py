@@ -313,6 +313,7 @@ class StaticScheduler:
 
                 report.outcome = mpi_report.outcome
                 report.longrepr = mpi_report.longrepr
+                report.duration = mpi_report.duration
 
 
 def sub_comm_from_ranks(global_comm, sub_ranks):
@@ -582,6 +583,7 @@ class DynamicScheduler:
 
                 report.outcome = mpi_report.outcome
                 report.longrepr = mpi_report.longrepr
+                report.duration = mpi_report.duration
 
 
 import socket
@@ -598,7 +600,8 @@ class ProcessWorker:
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
         comm = MPI.COMM_WORLD
-        item = session.items[self.test_idx]
+        assert len(session.items) == 1, f'INTERNAL FATAL ERROR in pytest_parallel with slurm scheduling: should only have one test per worker'
+        item = session.items[0]
         test_comm_size = get_n_proc_for_test(item)
 
         item.sub_comm = comm

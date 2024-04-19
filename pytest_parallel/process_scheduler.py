@@ -6,7 +6,6 @@ from pathlib import Path
 from . import socket_utils
 from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
 from .algo import partition
-#from mpi4py import MPI
 
 
 def mark_skip(item, slurm_ntasks):
@@ -79,7 +78,7 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_c
         test_idx = item.original_index
         test_out_file_base = f'pytest_slurm/{remove_exotic_chars(item.nodeid)}'
         cmd =  f'srun --exclusive --ntasks={item.n_proc} -l'
-        cmd += f' python3 -u -m pytest {worker_flags} {main_invoke_params} --_test_idx={test_idx}'
+        cmd += f' python3 -u -m pytest -s {worker_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file_base} 2>&1'
         cmd += ' &\n' # launch everything in parallel
         cmds += cmd
