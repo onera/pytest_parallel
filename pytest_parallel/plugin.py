@@ -106,7 +106,8 @@ def pytest_configure(config):
 
     else:
         from mpi4py import MPI
-        from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler, ProcessWorker
+        from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
+        from .process_worker import ProcessWorker
         from .utils_mpi import spawn_master_process, should_enable_terminal_reporter
 
         global_comm = MPI.COMM_WORLD

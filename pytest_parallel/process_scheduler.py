@@ -99,7 +99,7 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_c
         sbatch_cmd = slurm_conf['sub_command'] + ' pytest_slurm/job.sh'
 
     p = subprocess.Popen([sbatch_cmd], shell=True, stdout=subprocess.PIPE)
-    print('Submitting tests to SLURM...')
+    print('\nSubmitting tests to SLURM...')
     returncode = p.wait()
     assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
 
