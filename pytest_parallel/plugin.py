@@ -1,13 +1,12 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+import sys
+import subprocess
 import tempfile
 import pytest
 from pathlib import Path
-# Note:
-#    we need to NOT import mpi4py when pytest_parallel
-#    is called with the SLURM scheduler
-#    because it can mess SLURM `srun`
+
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -36,18 +35,20 @@ def pytest_addoption(parser):
     parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int, help='Internal pytest_parallel option')
     parser.addoption('--_test_idx'    , dest='_test_idx'    , type=int, help='Internal pytest_parallel option')
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_load_initial_conftests():
-    import sys
-    assert 'mpi4py.MPI' not in sys.modules, 'Internal pytest_parallel error: mpi4py.MPI should not be imported' \
-                                            ' when we are about to register and environment for SLURM' \
-                                            ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
-                                            ' and SLURM does not like that)'
+    # Note:
+    #    we need to NOT import mpi4py when pytest_parallel
+    #    is called with the SLURM scheduler
+    #    because it can mess SLURM `srun`
+    if "--scheduler=slurm" in sys.argv:
+        assert 'mpi4py.MPI' not in sys.modules, 'Internal pytest_parallel error: mpi4py.MPI should not be imported' \
+                                               ' when we are about to register and environment for SLURM' \
+                                               ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
+                                               ' and SLURM does not like that)'
 
-    import subprocess
-    r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
-    assert r.returncode==0, 'SLURM scheduler: error when writing `env` to `pytest_slurm/env_vars.sh`'
-    pytest._pytest_parallel_env_vars = r.stdout
+        r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
+
+        assert r.returncode==0, 'SLURM scheduler: error when writing `env` to `pytest_slurm/env_vars.sh`'
+        pytest._pytest_parallel_env_vars = r.stdout
 
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
