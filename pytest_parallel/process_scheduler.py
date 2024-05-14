@@ -31,18 +31,38 @@ def parse_job_id_from_submission_output(s):
     import re
     return int(re.search(r'\d+', str(s)).group())
 
+
+# https://stackoverflow.com/a/34177358
+def command_exists(cmd_name):
+    """Check whether `name` is on PATH and marked as executable."""
+    from shutil import which
+    return which(cmd_name) is not None
+
+def _get_my_ip_address():
+  hostname = socket.gethostname()
+
+  assert command_exists('tracepath'), 'pytest_parallel SLURM scheduler: command `tracepath` is not available'
+  cmd = ['tracepath','-4','-n',hostname]
+  r = subprocess.run(cmd, stdout=subprocess.PIPE)
+  assert r.returncode==0, f'pytest_parallel SLURM scheduler: error running command `{" ".join(cmd)}`'
+  ips = r.stdout.decode("utf-8")
+
+  try:
+    my_ip = ips.split('\n')[0].split(':')[1].split()[0]
+  except:
+    assert 0, f'pytest_parallel SLURM scheduler: error parsing result `{ips}` of command `{" ".join(cmd)}`'
+  import ipaddress
+  try:
+    ipaddress.ip_address(my_ip)
+  except ValueError:
+    assert 0, f'pytest_parallel SLURM scheduler: error parsing result `{ips}` of command `{" ".join(cmd)}`'
+
+  return my_ip
+
+
 def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_conf):
     # Find IP our address
-    r = subprocess.run(['hostname','-I'], stdout=subprocess.PIPE)
-    assert r.returncode==0, f'SLURM scheduler: error getting IP address of {socket.gethostname()} with `hostname -I`'
-    ips = r.stdout.decode("utf-8").strip().split()
-    assert len(ips) > 0, f'SLURM scheduler: error getting IP address of {socket.gethostname()}, `hostname -I` returned no address'
-    if slurm_conf['scheduler_ip'] is not None:
-        given_ip = slurm_conf['scheduler_ip']
-        assert given_ip in ips, f'address {given_ip} given by `--scheduler-ip` is in those given by `hostname -I`'
-        SCHEDULER_IP_ADDRESS = given_ip
-    else:
-        SCHEDULER_IP_ADDRESS = ips[0]
+    SCHEDULER_IP_ADDRESS = _get_my_ip_address()
 
     # setup master's socket
     socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port

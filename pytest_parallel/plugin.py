@@ -20,7 +20,6 @@ def pytest_addoption(parser):
     )
 
     parser.addoption('--n-workers', dest='n_workers', type=int, help='Max number of processes to run in parallel')
-    parser.addoption('--scheduler-ip', dest='scheduler_ip', type=str, help='IP address of the SLURM-scheduling pytest process (i.e. IP of the host node where you launch pytest). Defaults to first IP returned by `hostname -I`')
 
     parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
     parser.addoption('--slurm-additional-cmds', dest='slurm_additional_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
@@ -56,7 +55,6 @@ def pytest_configure(config):
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
     n_workers = config.getoption('n_workers')
-    scheduler_ip = config.getoption('scheduler_ip')
     slurm_options = config.getoption('slurm_options')
     slurm_additional_cmds = config.getoption('slurm_additional_cmds')
     slurm_worker = config.getoption('_worker')
@@ -68,7 +66,6 @@ def pytest_configure(config):
         assert not slurm_options, 'Option `--slurm-options` only available when `--scheduler=slurm`'
         assert not slurm_additional_cmds, 'Option `--slurm-additional-cmds` only available when `--scheduler=slurm`'
         assert not slurm_file, 'Option `--slurm-file` only available when `--scheduler=slurm`'
-        assert not scheduler_ip, 'Option `--scheduler-ip` only available when `--scheduler=slurm`'
 
     if scheduler == 'slurm' and not slurm_worker:
         assert slurm_options or slurm_file, 'You need to specify either `--slurm-options` or `--slurm-file` when `--scheduler=slurm`'
@@ -101,7 +98,6 @@ def pytest_configure(config):
             'additional_cmds': slurm_additional_cmds,
             'file'           : slurm_file,
             'sub_command'    : slurm_sub_command,
-            'scheduler_ip'   : scheduler_ip,
         }
         plugin = ProcessScheduler(main_invoke_params, n_workers, slurm_conf, detach)
 
