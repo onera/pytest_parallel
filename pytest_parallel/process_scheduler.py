@@ -114,7 +114,10 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_c
       f.write(pytest._pytest_parallel_env_vars)
 
     if slurm_conf['sub_command'] is None:
-        sbatch_cmd = 'sbatch --parsable --export-file=pytest_slurm/env_vars.sh pytest_slurm/job.sh'
+        if slurm_conf['export_env']:
+            sbatch_cmd = 'sbatch --parsable --export-file=pytest_slurm/env_vars.sh pytest_slurm/job.sh'
+        else:
+            sbatch_cmd = 'sbatch --parsable pytest_slurm/job.sh'
     else:
         sbatch_cmd = slurm_conf['sub_command'] + ' pytest_slurm/job.sh'
 

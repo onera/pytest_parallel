@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import pytest
 from pathlib import Path
+import argparse
 
 
 # --------------------------------------------------------------------------
@@ -23,8 +24,15 @@ def pytest_addoption(parser):
 
     parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
     parser.addoption('--slurm-additional-cmds', dest='slurm_additional_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
-    parser.addoption('--slurm-file', dest='slurm_file', type=str, help='Path to file containing header of SLURM job')
-    parser.addoption('--slurm-sub-command', dest='slurm_sub_command', type=str, help='SLURM submission command (defaults to `sbatch`)')
+    parser.addoption('--slurm-file', dest='slurm_file', type=str, help='Path to file containing header of SLURM job') # TODO DEL
+    parser.addoption('--slurm-sub-command', dest='slurm_sub_command', type=str, help='SLURM submission command (defaults to `sbatch`)') # TODO DEL
+
+    if sys.version_info >= (3,9):
+        parser.addoption('--slurm-export-env', dest='slurm_export_env', action=argparse.BooleanOptionalAction, default=True)
+    else:
+        parser.addoption('--slurm-export-env', dest='slurm_export_env', action='store_true')
+        parser.addoption('--no-slurm-export-env', dest='slurm_export_env', action='store_false')
+        parser.set_defaults(slurm_export_env=True)
 
     parser.addoption('--detach', dest='detach', action='store_true', help='Detach SLURM jobs: do not send reports to the scheduling process (useful to launch slurm job.sh separately)')
 
@@ -59,6 +67,7 @@ def pytest_configure(config):
     slurm_additional_cmds = config.getoption('slurm_additional_cmds')
     slurm_worker = config.getoption('_worker')
     slurm_file = config.getoption('slurm_file')
+    slurm_export_env = config.getoption('slurm_export_env')
     slurm_sub_command = config.getoption('slurm_sub_command')
     detach = config.getoption('detach')
     if scheduler != 'slurm':
@@ -97,6 +106,7 @@ def pytest_configure(config):
             'options'        : slurm_option_list,
             'additional_cmds': slurm_additional_cmds,
             'file'           : slurm_file,
+            'export_env'           : slurm_export_env,
             'sub_command'    : slurm_sub_command,
         }
         plugin = ProcessScheduler(main_invoke_params, n_workers, slurm_conf, detach)
