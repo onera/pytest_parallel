@@ -30,9 +30,8 @@ def pytest_addoption(parser):
     if sys.version_info >= (3,9):
         parser.addoption('--slurm-export-env', dest='slurm_export_env', action=argparse.BooleanOptionalAction, default=True)
     else:
-        parser.addoption('--slurm-export-env', dest='slurm_export_env', action='store_true')
+        parser.addoption('--slurm-export-env', dest='slurm_export_env', default=False, action='store_true')
         parser.addoption('--no-slurm-export-env', dest='slurm_export_env', action='store_false')
-        parser.set_defaults(slurm_export_env=True)
 
     parser.addoption('--detach', dest='detach', action='store_true', help='Detach SLURM jobs: do not send reports to the scheduling process (useful to launch slurm job.sh separately)')
 
