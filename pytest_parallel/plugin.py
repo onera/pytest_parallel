@@ -16,7 +16,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--scheduler",
         dest="scheduler",
-        type="choice",
         choices=["sequential", "static", "dynamic"],
         default="sequential",
     )
