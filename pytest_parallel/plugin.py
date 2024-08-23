@@ -14,7 +14,7 @@ def pytest_addoption(parser):
     parser.addoption(
         '--scheduler',
         dest='scheduler',
-        type='choice',
+        type=str,
         choices=['sequential', 'static', 'dynamic', 'slurm'],
         default='sequential',
         help='Method used by pytest_parallel to schedule tests',
