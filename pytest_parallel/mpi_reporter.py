@@ -17,6 +17,33 @@ def mark_skip(item):
     item.marker_mpi_skip = True
 
 
+def sub_comm_from_ranks(global_comm, sub_ranks):
+    group = global_comm.group
+    sub_group = group.Incl(sub_ranks)
+    sub_comm = global_comm.Create_group(sub_group)
+    return sub_comm
+
+def create_sub_comm_of_size(global_comm, n_proc, comm_creation_strategy):
+    if comm_creation_strategy == 'MPI_Comm_create':
+        return sub_comm_from_ranks(global_comm, range(0,n_proc))
+    elif comm_creation_strategy == 'MPI_Comm_split':
+        if i_rank < n_proc_test:
+            color = 1
+        else:
+            color = MPI.UNDEFINED
+        return global_comm.Split(color, key=i_rank)
+    else:
+        assert 0, 'unknown MPI communicator creation strategy'
+
+def create_sub_comms_for_each_size(global_comm, comm_creation_strategy='MPI_Comm_create'):
+    i_rank = global_comm.Get_rank()
+    n_rank = global_comm.Get_size()
+    sub_comms = [None] * n_rank
+    for i in range(0,n_rank):
+        n_proc = i+1
+        sub_comms[i] = create_sub_comm_of_size(global_comm, n_proc, comm_creation_strategy)
+    return sub_comms
+
 def filter_and_add_sub_comm(items, global_comm):
     i_rank = global_comm.Get_rank()
     n_workers = global_comm.Get_size()
@@ -33,27 +60,55 @@ def filter_and_add_sub_comm(items, global_comm):
             else:
                 item.sub_comm = MPI.COMM_NULL  # TODO this should not be needed
         else:
-            if i_rank < n_proc_test:
-                color = 1
-            else:
-                color = MPI.UNDEFINED
+            #if i_rank < n_proc_test:
+            #    sub_comm = sub_comm_from_ranks(global_comm, range(0,n_proc_test))
+            #else:
+            #    sub_comm = MPI.COMM_NULL
+            #print(f"\nTOTO {item=} {sub_comm=}")
+            #if i_rank < n_proc_test:
+            #    color = 1
+            #else:
+            #    color = MPI.UNDEFINED
 
-            sub_comm = global_comm.Split(color)
+            #print(f"{i_rank=} {item=} {item.name=} {color=}")
+            #sub_comm = global_comm.Split(color, key=i_rank)
 
-            if sub_comm != MPI.COMM_NULL:
-                item.sub_comm = sub_comm
-                filtered_items += [item]
+            ##if sub_comm != MPI.COMM_NULL:
+            ##    item.sub_comm = sub_comm
+            #item.sub_comm = sub_comm
+
+            filtered_items += [item]
 
     return filtered_items
 
-
 class SequentialScheduler:
     def __init__(self, global_comm):
-        self.global_comm = global_comm
+        self.global_comm = global_comm.Dup()  # ensure that all communications within the framework are private to the framework
+        self.sub_comms = create_sub_comms_for_each_size(self.global_comm)
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, config, items):
         items[:] = filter_and_add_sub_comm(items, self.global_comm)
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_protocol(self, item, nextitem):
+        #i_rank = self.global_comm.Get_rank()
+        #n_proc_test = get_n_proc_for_test(item)
+        #if i_rank < n_proc_test:
+        #    sub_comm = sub_comm_from_ranks(self.global_comm, range(0,n_proc_test))
+        #else:
+        #    sub_comm = MPI.COMM_NULL
+        #item.sub_comm = sub_comm
+        n_proc_test = get_n_proc_for_test(item)
+        item.sub_comm = self.sub_comms[n_proc_test-1]
+        
+    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_pyfunc_call(self, pyfuncitem):
+        #self.global_comm.barrier()
+        if pyfuncitem.sub_comm != MPI.COMM_NULL:
+            _ = yield
+        # else: the rank does not participate in the test, so do nothing
+        #self.global_comm.barrier()
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
@@ -76,7 +131,8 @@ class SequentialScheduler:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_logreport(self, report):
-        gather_report_on_local_rank_0(report)
+        if report.sub_comm != MPI.COMM_NULL:
+            gather_report_on_local_rank_0(report)
 
 
 def group_items_by_parallel_steps(items, n_workers):
@@ -159,9 +215,7 @@ def items_to_run_on_this_proc(items_by_steps, items_to_skip, comm):
 
 class StaticScheduler:
     def __init__(self, global_comm):
-        self.global_comm = (
-            global_comm.Dup()
-        )  # ensure that all communications within the framework are private to the framework
+        self.global_comm = global_comm.Dup()  # ensure that all communications within the framework are private to the framework
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
@@ -239,13 +293,6 @@ class StaticScheduler:
                 report.outcome = mpi_report.outcome
                 report.longrepr = mpi_report.longrepr
                 report.duration = mpi_report.duration
-
-
-def sub_comm_from_ranks(global_comm, sub_ranks):
-    group = global_comm.group
-    sub_group = group.Incl(sub_ranks)
-    sub_comm = global_comm.Create_group(sub_group)
-    return sub_comm
 
 
 def item_with_biggest_admissible_n_proc(items, n_av_procs):
