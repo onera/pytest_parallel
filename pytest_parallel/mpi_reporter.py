@@ -1,91 +1,20 @@
 import numpy as np
 import pytest
-from _pytest._code.code import (
-    ExceptionChainRepr,
-    ReprTraceback,
-    ReprEntryNative,
-    ReprFileLocation,
-)
 from mpi4py import MPI
 
 from .algo import partition, lower_bound
-from .utils import (
-    number_of_working_processes,
-    get_n_proc_for_test,
-    mark_skip,
-    add_n_procs,
-    is_dyn_master_process,
-)
+from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
+from .utils_mpi import number_of_working_processes, is_dyn_master_process
+from .gather_report import gather_report_on_local_rank_0
 
 
-def gather_report(mpi_reports, n_sub_rank):
-    assert len(mpi_reports) == n_sub_rank
-
-    report_init = mpi_reports[0]
-    goutcome = report_init.outcome
-    glongrepr = report_init.longrepr
-
-    collect_longrepr = []
-    # > We need to rebuild a TestReport object, location can be false # TODO ?
-    for i_sub_rank, test_report in enumerate(mpi_reports):
-        if test_report.outcome == "failed":
-            goutcome = "failed"
-
-        if test_report.longrepr:
-            msg = f"On rank {i_sub_rank} of {n_sub_rank}"
-            full_msg = f"\n-------------------------------- {msg} --------------------------------"
-            fake_trace_back = ReprTraceback([ReprEntryNative(full_msg)], None, None)
-            collect_longrepr.append(
-                (fake_trace_back, ReprFileLocation(*report_init.location), None)
-            )
-            collect_longrepr.append(
-                (test_report.longrepr, ReprFileLocation(*report_init.location), None)
-            )
-
-    if len(collect_longrepr) > 0:
-        glongrepr = ExceptionChainRepr(collect_longrepr)
-
-    return goutcome, glongrepr
-
-
-def gather_report_on_local_rank_0(report):
-    """
-    Gather reports from all procs participating in the test on rank 0 of the sub_comm
-    """
-    sub_comm = report.sub_comm
-    del report.sub_comm  # No need to keep it in the report
-    # Furthermore we need to serialize the report
-    # and mpi4py does not know how to serialize report.sub_comm
-    i_sub_rank = sub_comm.Get_rank()
-    n_sub_rank = sub_comm.Get_size()
-
-    if (
-        report.outcome != "skipped"
-    ):  # Skipped test are only known by proc 0 -> no merge required
-        # Warning: PyTest reports can actually be quite big
-        request = sub_comm.isend(report, dest=0, tag=i_sub_rank)
-
-        if i_sub_rank == 0:
-            mpi_reports = n_sub_rank * [None]
-            for _ in range(n_sub_rank):
-                status = MPI.Status()
-
-                mpi_report = sub_comm.recv(
-                    source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status
-                )
-                mpi_reports[status.Get_source()] = mpi_report
-
-            assert (
-                None not in mpi_reports
-            )  # should have received from all ranks of `sub_comm`
-            goutcome, glongrepr = gather_report(mpi_reports, n_sub_rank)
-
-            report.outcome = goutcome
-            report.longrepr = glongrepr
-
-        request.wait()
-
-    sub_comm.barrier()
+def mark_skip(item):
+    comm = MPI.COMM_WORLD
+    n_rank = comm.Get_size()
+    n_proc_test = get_n_proc_for_test(item)
+    skip_msg = f"Not enough procs to execute: {n_proc_test} required but only {n_rank} available"
+    item.add_marker(pytest.mark.skip(reason=skip_msg), append=False)
+    item.marker_mpi_skip = True
 
 
 def filter_and_add_sub_comm(items, global_comm):
@@ -128,7 +57,7 @@ class SequentialScheduler:
 
     @pytest.hookimpl(hookwrapper=True, tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
-        outcome = yield
+        _ = yield
         # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED)
         # when no test run on non-master
         if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
@@ -175,16 +104,7 @@ def group_items_by_parallel_steps(items, n_workers):
     return items_by_step, items_to_skip
 
 
-def run_item_test(item, nextitem, session):
-    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
-    if session.shouldfail:
-        raise session.Failed(session.shouldfail)
-    if session.shouldstop:
-        raise session.Interrupted(session.shouldstop)
-
-
 def prepare_items_to_run(items, comm):
-    n_rank = comm.Get_size()
     i_rank = comm.Get_rank()
 
     items_to_run = []
@@ -318,6 +238,7 @@ class StaticScheduler:
 
                 report.outcome = mpi_report.outcome
                 report.longrepr = mpi_report.longrepr
+                report.duration = mpi_report.duration
 
 
 def sub_comm_from_ranks(global_comm, sub_ranks):
@@ -349,10 +270,6 @@ def item_with_biggest_admissible_n_proc(items, n_av_procs):
     return lower_bound(items, max_needed_n_proc, _key)
 
 
-def mark_original_index(items):
-    for i, item in enumerate(items):
-        item.original_index = i
-
 
 ########### Client/Server ###########
 SCHEDULED_WORK_TAG = 0
@@ -381,7 +298,7 @@ def schedule_test(item, available_procs, inter_comm):
 
     item.sub_ranks = sub_ranks
 
-    # the procs are busy
+    # mark the procs as busy
     for sub_rank in sub_ranks:
         available_procs[sub_rank] = False
 
@@ -408,17 +325,14 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
     # get associated item
     item = items_to_run[original_idx]
-    n_proc = item.n_proc
     sub_ranks = item.sub_ranks
     assert first_rank_done in sub_ranks
 
-    # receive done message from all other proc associated to the item
+    # receive done message from all other procs associated to the item
     for sub_rank in sub_ranks:
         if sub_rank != first_rank_done:
             rank_original_idx = inter_comm.recv(source=sub_rank, tag=WORK_DONE_TAG)
-            assert (
-                rank_original_idx == original_idx
-            )  # sub_rank is supposed to have worked on the same test
+            assert (rank_original_idx == original_idx) # sub_rank is supposed to have worked on the same test
 
     # the procs are now available
     for sub_rank in sub_ranks:
@@ -442,21 +356,19 @@ def receive_run_and_report_tests(
         # receive
         original_idx, sub_ranks = inter_comm.recv(source=0, tag=SCHEDULED_WORK_TAG)
         if original_idx == -1:
-            return  # signal work is done
+            return # signal work is done
 
         # run
         sub_comm = sub_comm_from_ranks(global_comm, sub_ranks)
         item = items_to_run[original_idx]
         item.sub_comm = sub_comm
-        nextitem = None  # not known at this point
+        nextitem = None # not known at this point
         run_item_test(item, nextitem, session)
 
         # signal work is done for the test
         inter_comm.send(original_idx, dest=0, tag=WORK_DONE_TAG)
 
-        MPI.Request.waitall(
-            current_item_requests
-        )  # make sure all report isends have been received
+        MPI.Request.waitall(current_item_requests) # make sure all report isends have been received
         current_item_requests.clear()
 
 
@@ -468,6 +380,8 @@ class DynamicScheduler:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
+        # This is where the test is normally run.
+        # Since the master process only collects the reports, it needs to *not* run anything.
         cond = is_dyn_master_process(self.inter_comm) and not (
             hasattr(pyfuncitem, "marker_mpi_skip") and pyfuncitem.marker_mpi_skip
         )
@@ -520,25 +434,19 @@ class DynamicScheduler:
             while len(items_left_to_run) > 0:
                 n_av_procs = np.sum(available_procs)
 
-                item_idx = item_with_biggest_admissible_n_proc(
-                    items_left_to_run, n_av_procs
-                )
+                item_idx = item_with_biggest_admissible_n_proc(items_left_to_run, n_av_procs)
 
                 if item_idx == -1:
-                    wait_test_to_complete(
-                        items_to_run, session, available_procs, self.inter_comm
-                    )
+                    wait_test_to_complete(items_to_run, session, available_procs, self.inter_comm)
                 else:
-                    schedule_test(
-                        items_left_to_run[item_idx], available_procs, self.inter_comm
-                    )
+                    schedule_test(items_left_to_run[item_idx], available_procs, self.inter_comm)
                     del items_left_to_run[item_idx]
 
             wait_last_tests_to_complete(
                 items_to_run, session, available_procs, self.inter_comm
             )
             signal_all_done(self.inter_comm)
-        else:  # worker proc
+        else: # worker proc
             receive_run_and_report_tests(
                 items_to_run,
                 session,
@@ -585,12 +493,12 @@ class DynamicScheduler:
                     # The idea of the scheduler is the following:
                     #   The server schedules test over clients
                     #   A client executes the test then report to the server it is done
-                    #   The server execute the PyTest pipeline to make it think it ran the test (but only receives the reports of the client)
+                    #   The server executes the PyTest pipeline to make it think it ran the test (but only receives the reports of the client)
                     #   The server continues its scheduling
                     # Here in the report, we need an isend, because the ordering is the following:
                     #   Client: run test, isend reports, send done to server
                     #   Server: recv done from client, 'run' test (i.e. recv reports)
-                    # So the 'send done' must be received before the 'send report'
+                    # So the 'send done' must be received before the 'isend report'
                     request = self.inter_comm.isend(report, dest=0, tag=tag)
                     self.current_item_requests.append(request)
             else:  # global master: receive
@@ -600,3 +508,4 @@ class DynamicScheduler:
 
                 report.outcome = mpi_report.outcome
                 report.longrepr = mpi_report.longrepr
+                report.duration = mpi_report.duration

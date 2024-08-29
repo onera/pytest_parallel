@@ -2,23 +2,21 @@
   Test that pytest_parallel gives the correct outputs
   by running it on a set of examples,
   then comparing it to template references
-
-  We run the checks with pytest
-  But, since we are in the process of testing pytest_parallel,
-  the testing framework (this file!) MUST DISABLE pytest_parallel when we run its tests
-  (but of course its tests will in turn run tests with pytest_parallel enabled)
 """
-import os
-import sys
 
+
+# pytest_parallel MUST NOT be plugged in its testing framework environement
+# it will be plugged by the framework when needed (see `run_pytest_parallel_test`)
+# (else we would use pytest_parallel to test pytest_parallel, which is logically wrong)
+import os
+pytest_plugins = os.getenv('PYTEST_PLUGINS')
+assert pytest_plugins is None or 'pytest_parallel.plugin' not in pytest_plugins
+
+import sys
 import re
 import subprocess
 from pathlib import Path
 import pytest
-
-
-# def test_env_ok(pytestconfig):
-#     assert not pytestconfig.pluginmanager.hasplugin('pytest_parallel')
 
 
 root_dir = Path(__file__).parent
@@ -54,11 +52,11 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     stderr_file_path.unlink(missing_ok=True)
 
     test_env = os.environ.copy()
-    # According to Gentoo people it is a good practise for CI
-    # To disable autoload and enforce explicit plugin loading
+    # To test pytest_parallel, we can need to launch pytest with it
     if "PYTEST_DISABLE_PLUGIN_AUTOLOAD" not in test_env:
         test_env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     cmd = f"mpiexec -n {n_workers} pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
+    #cmd = f"pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} --slurm_options='--time=00:30:00 --qos=co_short_std --ntasks={n_workers}' {test_file_path}"
     subprocess.run(cmd, shell=True, text=True, env=test_env)
     captured = capfd.readouterr()
     with open(output_file_path, "w", encoding="utf-8", newline="\n") as f:
@@ -69,16 +67,15 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     assert ref_match(output_file_name)
 
 
-param_scheduler = (
-    ["sequential", "static", "dynamic"]
-    if sys.platform != "win32"
-    else ["sequential", "static"]
-)
+param_scheduler = ["sequential", "static", "dynamic"]
+# TODO "slurm" scheduler
+#param_scheduler = ["slurm"]
+if sys.platform == "win32":
+  param_scheduler = ["sequential", "static"]
 
 # fmt: off
 @pytest.mark.parametrize("scheduler", param_scheduler)
 class TestPytestParallel:
-
     def test_00(self, scheduler, capfd): run_pytest_parallel_test('seq'                             , 1, scheduler, capfd)
 
     def test_01(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_one_proc'      , 1, scheduler, capfd) # need at least 1 proc
@@ -110,14 +107,14 @@ class TestPytestParallel:
 # fmt: on
 
 ## If one test fail, it may be useful to debug regex matching along the following lines
-# test = 'two_fail_tests_one_proc'
-# file = 'terminal_'+test
+#test = 'two_fail_tests_one_proc'
+#file = 'terminal_'+test
 #
-# template_path = refs_dir/file
-# with open(template_path, 'r') as f:
-#  ref_regex = f.read()
-# output_path = output_dir/file
-# with open(output_path, 'r') as f:
-#  result = f.read()
+#template_path = refs_dir/file
+#with open(template_path, 'r') as f:
+#    ref_regex = f.read()
+#output_path = output_dir/file
+#with open(output_path, 'r') as f:
+#    result = f.read()
 #
-# print(re.findall(ref_regex, result, flags=re.DOTALL))
+#print(re.findall(ref_regex, result, flags=re.DOTALL))
