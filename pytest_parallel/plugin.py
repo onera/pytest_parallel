@@ -15,16 +15,10 @@ def pytest_addoption(parser):
     parser.addoption(
         '--scheduler',
         dest='scheduler',
-        choices=['sequential', 'static', 'dynamic', 'slurm'],
+        choices=['sequential', 'static', 'dynamic', 'slurm', 'separated'],
         default='sequential',
         help='Method used by pytest_parallel to schedule tests',
     )
-
-    if sys.version_info >= (3,9):
-        parser.addoption('--share-procs', dest='share_processes', action=argparse.BooleanOptionalAction, default=False,
-                         help='Use given MPI processes and run all tests on them')
-    else:
-        parser.addoption('--share-procs', dest='share_processes', default=True, action='store_false')
 
     parser.addoption('--n-workers', dest='n_workers', type=int, help='Max number of processes to run in parallel')
 
@@ -41,7 +35,7 @@ def pytest_addoption(parser):
 
     parser.addoption('--detach', dest='detach', action='store_true', help='Detach SLURM jobs: do not send reports to the scheduling process (useful to launch slurm job.sh separately)')
 
-    # Private to SLURM scheduler
+    # Private to separated schedulers (slurm and separated)
     parser.addoption('--_worker', dest='_worker', action='store_true', help='Internal pytest_parallel option')
     parser.addoption('--_scheduler_ip_address', dest='_scheduler_ip_address', type=str, help='Internal pytest_parallel option')
     parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int, help='Internal pytest_parallel option')
@@ -67,22 +61,25 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
-    share_processes = config.getoption('share_processes')
     n_workers = config.getoption('n_workers')
     slurm_options = config.getoption('slurm_options')
     slurm_additional_cmds = config.getoption('slurm_additional_cmds')
-    slurm_worker = config.getoption('_worker')
+    is_worker = config.getoption('_worker')
     slurm_file = config.getoption('slurm_file')
     slurm_export_env = config.getoption('slurm_export_env')
     slurm_sub_command = config.getoption('slurm_sub_command')
     detach = config.getoption('detach')
+    if scheduler != 'slurm' and scheduler != 'separated':
+        assert not is_worker, 'Option `--slurm-worker` only available when `--scheduler=slurm` or `--scheduler=separated`'
+    if (scheduler == 'slurm' or scheduler == 'separated') and not is_worker:
+        assert n_workers, f'You need to specify `--n-workers` when `--scheduler={scheduler}`'
     if scheduler != 'slurm':
-        assert not slurm_worker, 'Option `--slurm-worker` only available when `--scheduler=slurm`'
         assert not slurm_options, 'Option `--slurm-options` only available when `--scheduler=slurm`'
         assert not slurm_additional_cmds, 'Option `--slurm-additional-cmds` only available when `--scheduler=slurm`'
         assert not slurm_file, 'Option `--slurm-file` only available when `--scheduler=slurm`'
 
-    if scheduler == 'slurm' and not slurm_worker:
+
+    if scheduler == 'slurm' and not is_worker:
         assert slurm_options or slurm_file, 'You need to specify either `--slurm-options` or `--slurm-file` when `--scheduler=slurm`'
         if slurm_options:
             assert not slurm_file, 'You need to specify either `--slurm-options` or `--slurm-file`, but not both'
@@ -117,13 +114,14 @@ def pytest_configure(config):
         }
         plugin = ProcessScheduler(main_invoke_params, n_workers, slurm_conf, detach)
 
-    elif not share_processes:
-        if scheduler == 'sequential':
-            plugin = SequentialScheduler(global_comm)
-        elif scheduler == 'static':
-            plugin = StaticScheduler(global_comm)
-        elif scheduler == 'dynamic':
+    elif scheduler == 'separated' and not is_worker:
+        from .separated_static_scheduler import SeparatedStaticScheduler
+        enable_terminal_reporter = True
 
+        main_invoke_params = ' '.join(config.invocation_params.args)
+        for file_or_dir in config.option.file_or_dir:
+          main_invoke_params = main_invoke_params.replace(file_or_dir, '')
+        plugin = SeparatedStaticScheduler(main_invoke_params, n_workers, detach)
     else:
         from mpi4py import MPI
         from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
@@ -140,7 +138,7 @@ def pytest_configure(config):
         elif scheduler == 'dynamic':
             inter_comm = spawn_master_process(global_comm)
             plugin = DynamicScheduler(global_comm, inter_comm)
-        elif scheduler == 'slurm' and slurm_worker:
+        elif (scheduler == 'slurm' or scheduler == 'separated') and is_worker:
             scheduler_ip_address = config.getoption('_scheduler_ip_address')
             scheduler_port = config.getoption('_scheduler_port')
             test_idx = config.getoption('_test_idx')

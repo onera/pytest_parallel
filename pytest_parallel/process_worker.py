@@ -18,6 +18,7 @@ class ProcessWorker:
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
         comm = MPI.COMM_WORLD
+        print("\n\n\nwololo",[item.name for item in session.items])
         assert len(session.items) == 1, f'INTERNAL FATAL ERROR in pytest_parallel with slurm scheduling: should only have one test per worker, but got {len(session.items)}'
         item = session.items[0]
         test_comm_size = get_n_proc_for_test(item)
