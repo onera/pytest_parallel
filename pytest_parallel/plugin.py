@@ -20,6 +20,12 @@ def pytest_addoption(parser):
         help='Method used by pytest_parallel to schedule tests',
     )
 
+    if sys.version_info >= (3,9):
+        parser.addoption('--share-procs', dest='share_processes', action=argparse.BooleanOptionalAction, default=False,
+                         help='Use given MPI processes and run all tests on them')
+    else:
+        parser.addoption('--share-procs', dest='share_processes', default=True, action='store_false')
+
     parser.addoption('--n-workers', dest='n_workers', type=int, help='Max number of processes to run in parallel')
 
     parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
@@ -61,6 +67,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
+    share_processes = config.getoption('share_processes')
     n_workers = config.getoption('n_workers')
     slurm_options = config.getoption('slurm_options')
     slurm_additional_cmds = config.getoption('slurm_additional_cmds')
@@ -109,6 +116,13 @@ def pytest_configure(config):
             'sub_command'    : slurm_sub_command,
         }
         plugin = ProcessScheduler(main_invoke_params, n_workers, slurm_conf, detach)
+
+    elif not share_processes:
+        if scheduler == 'sequential':
+            plugin = SequentialScheduler(global_comm)
+        elif scheduler == 'static':
+            plugin = StaticScheduler(global_comm)
+        elif scheduler == 'dynamic':
 
     else:
         from mpi4py import MPI
