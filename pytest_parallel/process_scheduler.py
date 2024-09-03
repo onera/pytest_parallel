@@ -107,11 +107,11 @@ def submit_items(items_to_run, socket, main_invoke_params, slurm_ntasks, slurm_c
     pytest_slurm = f'{slurm_header}\n\n{cmds}'
     Path('pytest_slurm').mkdir(exist_ok=True)
     with open('pytest_slurm/job.sh','w') as f:
-      f.write(pytest_slurm)
+        f.write(pytest_slurm)
 
     # submit SLURM job
     with open('pytest_slurm/env_vars.sh','wb') as f:
-      f.write(pytest._pytest_parallel_env_vars)
+        f.write(pytest._pytest_parallel_env_vars)
 
     if slurm_conf['sub_command'] is None:
         if slurm_conf['export_env']:

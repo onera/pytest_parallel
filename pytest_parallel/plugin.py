@@ -11,6 +11,32 @@ import argparse
 #from logger import consoleLogger
 
 # --------------------------------------------------------------------------
+def save_shell_env_without_mpi_vars():
+    r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
+    assert r.returncode==0, 'SLURM scheduler: error when writing `env` to `pytest_slurm/env_vars.sh`'
+    env_vars = r.stdout
+
+    env_vars_no_mpi = b''
+    openmpi_vars = (
+        b'OMPI_',
+        b'PRTE_',
+        b'PMIX_',
+        b'OPAL_',
+    )
+    for var in env_vars.split(b'\0'):
+        if not var.startswith(openmpi_vars):
+            env_vars_no_mpi += var + b'\0'
+    #print(env_vars_no_mpi)
+    #print('\n\n\n\n')
+
+    #env_vars_no_mpi.replace(b'\n',b'\0')# end each output line with NUL, required by `sbatch --export-file`
+    #with open('env_vars_toto.sh','wb') as f:
+    #    f.write(env_vars_no_mpi)
+    #assert 0
+    return env_vars_no_mpi
+
+
+# --------------------------------------------------------------------------
 def pytest_addoption(parser):
     parser.addoption(
         '--scheduler',
@@ -50,11 +76,7 @@ def pytest_addoption(parser):
                                                ' when we are about to register and environment for SLURM' \
                                                ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
                                                ' and SLURM does not like that)'
-
-        r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
-
-        assert r.returncode==0, 'SLURM scheduler: error when writing `env` to `pytest_slurm/env_vars.sh`'
-        pytest._pytest_parallel_env_vars = r.stdout
+        pytest._pytest_parallel_env_vars = save_shell_env_without_mpi_vars()
 
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
