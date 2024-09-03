@@ -102,8 +102,7 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks):
         cmd += f' > {test_out_file_base}'
         cmds.append(cmd)
 
-    script = " && \\\n".join(cmds)
-    script += " &\n"
+    script = " & \\\n".join(cmds)
     Path('.pytest_parallel').mkdir(exist_ok=True)
     script_path = '.pytest_parallel/pytest_static_sched.sh'
     with open(script_path,'w') as f:
@@ -148,7 +147,7 @@ def receive_items(items, session, socket, n_item_to_recv):
         run_item_test(items[test_idx], nextitem, session)
         n_item_to_recv -= 1
 
-class SeparatedStaticScheduler:
+class ShellStaticScheduler:
     def __init__(self, main_invoke_params, ntasks, detach):
         self.main_invoke_params = main_invoke_params
         self.ntasks             = ntasks
