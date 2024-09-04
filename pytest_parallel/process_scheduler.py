@@ -104,10 +104,10 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
         cmds += cmd
     cmds += 'wait\n'
 
-    .pytest_parallel = f'{slurm_header}\n\n{cmds}'
+    job_cmds = f'{slurm_header}\n\n{cmds}'
     Path('.pytest_parallel').mkdir(exist_ok=True)
     with open('.pytest_parallel/job.sh','w') as f:
-      f.write(.pytest_parallel)
+      f.write(job_cmds)
 
     # submit SLURM job
     with open('.pytest_parallel/env_vars.sh','wb') as f:
