@@ -57,6 +57,16 @@ def pytest_addoption(parser):
         pytest._pytest_parallel_env_vars = r.stdout
 
 # --------------------------------------------------------------------------
+def _invoke_params(args):
+    quoted_invoke_params = []
+    for arg in args:
+        if ' ' in arg and not '--slurm-options' in arg:
+            quoted_invoke_params.append("'"+arg+"'")
+        else:
+            quoted_invoke_params.append(arg)
+    return ' '.join(quoted_invoke_params)
+
+# --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     # Get options and check dependent/incompatible options
@@ -93,13 +103,7 @@ def pytest_configure(config):
 
         # List of all invoke options except slurm options
         ## reconstruct complete invoke string
-        quoted_invoke_params = []
-        for arg in config.invocation_params.args:
-            if ' ' in arg and not '--slurm-options' in arg:
-                quoted_invoke_params.append("'"+arg+"'")
-            else:
-                quoted_invoke_params.append(arg)
-        main_invoke_params = ' '.join(quoted_invoke_params)
+        main_invoke_params = _invoke_params(config.invocation_params.args)
         ## pull apart `--slurm-options` for special treatement
         main_invoke_params = main_invoke_params.replace(f'--slurm-options={slurm_options}', '')
         for file_or_dir in config.option.file_or_dir:
@@ -118,7 +122,8 @@ def pytest_configure(config):
         from .shell_static_scheduler import ShellStaticScheduler
         enable_terminal_reporter = True
 
-        main_invoke_params = ' '.join(config.invocation_params.args)
+        # reconstruct complete invoke string
+        main_invoke_params = _invoke_params(config.invocation_params.args)
         for file_or_dir in config.option.file_or_dir:
           main_invoke_params = main_invoke_params.replace(file_or_dir, '')
         plugin = ShellStaticScheduler(main_invoke_params, n_workers, detach)
