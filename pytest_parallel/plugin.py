@@ -7,8 +7,7 @@ import tempfile
 import pytest
 from pathlib import Path
 import argparse
-#from mpi4py import MPI
-#from logger import consoleLogger
+import resource
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -21,6 +20,8 @@ def pytest_addoption(parser):
     )
 
     parser.addoption('--n-workers', dest='n_workers', type=int, help='Max number of processes to run in parallel')
+
+    parser.addoption('--timeout', dest='timeout', type=int, default=7200, help='Timeout')
 
     parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
     parser.addoption('--slurm-additional-cmds', dest='slurm_additional_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
@@ -69,6 +70,10 @@ def _invoke_params(args):
 # --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
+    # Set timeout
+    timeout = config.getoption('timeout')
+    resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout))
+
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')
     n_workers = config.getoption('n_workers')
