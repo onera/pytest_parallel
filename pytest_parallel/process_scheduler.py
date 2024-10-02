@@ -90,6 +90,9 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
     items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
 
     # launch srun for each item
+    srun_options = slurm_conf['srun_options']
+    if srun_options is None:
+      srun_options = ''
     worker_flags=f"--_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
     cmds = ''
     if slurm_conf['additional_cmds'] is not None:
@@ -97,7 +100,7 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
     for item in items:
         test_idx = item.original_index
         test_out_file_base = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
-        cmd =  f'srun --exclusive --ntasks={item.n_proc} -l'
+        cmd =  f'srun {srun_options} --exclusive --ntasks={item.n_proc} -l'
         cmd += f' python3 -u -m pytest -s {worker_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file_base} 2>&1'
         cmd += ' &\n' # launch everything in parallel
