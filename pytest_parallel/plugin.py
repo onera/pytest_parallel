@@ -7,7 +7,8 @@ import tempfile
 import pytest
 from pathlib import Path
 import argparse
-
+#from mpi4py import MPI
+#from logger import consoleLogger
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -163,15 +164,19 @@ class CollectiveTemporaryDirectory:
         self.tmp_path = None
 
     def __enter__(self):
-        rank = self.comm.Get_rank()
-        self.tmp_dir = tempfile.TemporaryDirectory() if rank == 0 else None
-        self.tmp_path = Path(self.tmp_dir.name) if rank == 0 else None
-        return self.comm.bcast(self.tmp_path, root=0)
+        from mpi4py import MPI
+        if self.comm != MPI.COMM_NULL: # TODO DEL once non-participating rank do not participate in fixtures either
+            rank = self.comm.Get_rank()
+            self.tmp_dir = tempfile.TemporaryDirectory() if rank == 0 else None
+            self.tmp_path = Path(self.tmp_dir.name) if rank == 0 else None
+            return self.comm.bcast(self.tmp_path, root=0)
 
     def __exit__(self, type, value, traceback):
-        self.comm.barrier()
-        if self.comm.Get_rank() == 0:
-            self.tmp_dir.cleanup()
+        from mpi4py import MPI
+        if self.comm != MPI.COMM_NULL: # TODO DEL once non-participating rank do not participate in fixtures either
+            self.comm.barrier()
+            if self.comm.Get_rank() == 0:
+                self.tmp_dir.cleanup()
 
 
 @pytest.fixture
