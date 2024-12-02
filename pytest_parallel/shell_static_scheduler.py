@@ -97,7 +97,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
         test_out_file_base = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
         cmd  = mpi_command(current_proc, item.n_proc)
         cmd += f' python3 -u -m pytest -s {worker_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
-        cmd += f' > {test_out_file_base}'
+        cmd += f' > {test_out_file_base}\n'
         cmds.append(cmd)
         current_proc += item.n_proc
 
@@ -186,7 +186,10 @@ class ShellStaticScheduler:
             if not self.detach: # The job steps are supposed to send their reports
                 receive_items(session.items, session, self.socket, n_item_to_receive)
             returncode = sub_process.wait() # at this point, the sub-process should be done since items have been received
-            assert returncode==0, f'Error during step {i_step}` of shell scheduler'
+
+            # https://docs.pytest.org/en/stable/reference/exit-codes.html
+            # 0 means all passed, 1 means all executed, but some failed 
+            assert returncode==0 or returncode==1 , f'Pytest internal error during step {i_step} of shell scheduler (error code {returncode})'
 
         return True
 
