@@ -17,17 +17,17 @@ project(
 # ----------------------------------------------------------------------
 # Find Python
 # ----------------------------------------------------------------------
-if (NOT DEFINED "Python3_VERSION_MAJOR" OR
-    NOT DEFINED "Python3_VERSION_MINOR")
-    find_package("Python3" QUIET COMPONENTS Development.Module)
+if (NOT DEFINED "Python_VERSION_MAJOR" OR
+    NOT DEFINED "Python_VERSION_MINOR")
+  find_package(Python 3.8 REQUIRED COMPONENTS Development.Module)
 endif ()
 
 
 # ----------------------------------------------------------------------
 # Setup Python installation path
 # ----------------------------------------------------------------------
-if (Python3_VERSION_MAJOR AND Python3_VERSION_MINOR)
-    set(_python_version_suffix "${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
+if (Python_VERSION_MAJOR AND Python_VERSION_MINOR)
+    set(_python_version_suffix "${Python_VERSION_MAJOR}.${Python_VERSION_MINOR}")
 else ()
     message(WARNING "The version of Python is unknown; not using a versioned directory for Python modules.")
     set(_python_version_suffix)
