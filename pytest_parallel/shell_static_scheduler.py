@@ -97,11 +97,11 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
         test_out_file_base = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
         cmd  = mpi_command(current_proc, item.n_proc)
         cmd += f' python3 -u -m pytest -s {worker_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
-        cmd += f' > {test_out_file_base}\n'
+        cmd += f' > {test_out_file_base}'
         cmds.append(cmd)
         current_proc += item.n_proc
 
-    script = " & \\\n".join(cmds)
+    script = " & \\\n".join(cmds) + '\n'
     Path('.pytest_parallel').mkdir(exist_ok=True)
     script_path = f'.pytest_parallel/pytest_static_sched_{i_step}.sh'
     with open(script_path,'w') as f:
