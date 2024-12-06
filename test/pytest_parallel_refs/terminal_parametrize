@@ -3,6 +3,7 @@ platform [^\n]*
 cachedir: [^\n]*
 ?(?:metadata: [^\n]*)?
 rootdir: [^\n]*
+?(?:configfile: [^\n]*)?
 ?(?:plugins: [^\n]*)?
 collecting ... [\s]*collected 8 items[\s]*
 ?(?:Submitting tests to SLURM...)?

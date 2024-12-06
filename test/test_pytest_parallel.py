@@ -104,6 +104,7 @@ class TestPytestParallel:
     def test_18(self, scheduler, capfd): run_pytest_parallel_test('parametrize'                     , 2, scheduler, capfd) # check the parametrize API 
   
     def test_19(self, scheduler, capfd): run_pytest_parallel_test('scheduling'                      , 4, scheduler, capfd) # check 'real' case
+    def test_20(self, scheduler, capfd): run_pytest_parallel_test('fail_complex_assert_two_procs'   , 2, scheduler, capfd) # check 'complex' error message
 # fmt: on
 
 ## If one test fail, it may be useful to debug regex matching along the following lines
