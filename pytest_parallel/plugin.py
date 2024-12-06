@@ -1,13 +1,15 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+import os
 import sys
 import subprocess
 import tempfile
-import pytest
 from pathlib import Path
 import argparse
 import resource
+import pytest
+from _pytest.terminal import TerminalReporter
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -164,8 +166,15 @@ def pytest_configure(config):
 
     # only report to terminal if master process
     if not enable_terminal_reporter:
+        # unregister the stdout terminal reporter
         terminal_reporter = config.pluginmanager.getplugin('terminalreporter')
         config.pluginmanager.unregister(terminal_reporter)
+
+        # Pytest relies on having a terminal reporter to decide on how to create error messages, see #12
+        # Hence, register a terminal reporter that outputs to /dev/null
+        null_file = open(os.devnull,'w')
+        terminal_reporter = TerminalReporter(config, null_file)
+        config.pluginmanager.register(terminal_reporter, "terminalreporter")
 
 
 # --------------------------------------------------------------------------
