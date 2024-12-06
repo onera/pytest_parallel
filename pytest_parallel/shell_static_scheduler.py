@@ -10,6 +10,7 @@ from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_origina
 from .algo import partition
 from .static_scheduler_utils import group_items_by_parallel_steps
 from mpi4py import MPI
+import numpy as np
 
 def mark_skip(item, ntasks):
     n_proc_test = get_n_proc_for_test(item)
@@ -103,7 +104,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
 
     script = " & \\\n".join(cmds) + '\n'
     Path('.pytest_parallel').mkdir(exist_ok=True)
-    script_path = f'.pytest_parallel/pytest_static_sched_{i_step}.sh'
+    script_path = f'.pytest_parallel/pytest_static_sched_{i_step+1}.sh'
     with open(script_path,'w') as f:
       f.write(script)
 
@@ -111,10 +112,14 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
     os.chmod(script_path, current_permissions | stat.S_IXUSR)
 
     p = subprocess.Popen([script_path], shell=True, stdout=subprocess.PIPE)
-    print(f'\nLaunching tests (step {i_step}/{n_step})...')
+    print(f'\nLaunching tests (step {i_step+1}/{n_step})...')
     return p
 
 def receive_items(items, session, socket, n_item_to_recv):
+    # > Precondition: Items must keep their original order to pick up the right item at the reception
+    original_indices = np.array([item.original_index for item in items])
+    assert (original_indices==np.arange(len(items))).all()
+
     while n_item_to_recv>0:
         conn, addr = socket.accept()
         with conn:
@@ -123,13 +128,13 @@ def receive_items(items, session, socket, n_item_to_recv):
         test_idx = test_info['test_idx']
         if test_info['fatal_error'] is not None:
             assert 0, f'{test_info["fatal_error"]}'
-        item = items[test_idx]
+        item = items[test_idx] # works because of precondition
         item.sub_comm = None
         item.info = test_info
 
         # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
         nextitem = None  # not known at this point
-        run_item_test(items[test_idx], nextitem, session)
+        run_item_test(item, nextitem, session)
         n_item_to_recv -= 1
 
 class ShellStaticScheduler:

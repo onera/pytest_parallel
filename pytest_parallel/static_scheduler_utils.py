@@ -1,10 +1,10 @@
 def group_items_by_parallel_steps(items, n_workers):
-    items.sort(key=lambda item: item.n_proc, reverse=True)
+    _items = sorted(items, key=lambda item: item.n_proc, reverse=True)
 
     remaining_n_procs_by_step = []
     items_by_step = []
     items_to_skip = []
-    for item in items:
+    for item in _items:
         if item.n_proc > n_workers:
             items_to_skip += [item]
         else:
