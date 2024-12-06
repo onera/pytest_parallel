@@ -5,18 +5,10 @@ from pytest_parallel.mpi_reporter import (
 
 
 def test_group_items_by_parallel_steps():
-    class callspec_mock:
-        def __init__(self, n_proc):
-            self.n_proc = n_proc
-
-        def getparam(self, s):
-            assert s == "comm"
-            return self.n_proc
-
     class item_mock:
-        def __init__(self, name, n_procs):
+        def __init__(self, name, n_proc):
             self.name = name
-            self.callspec = callspec_mock(n_procs)
+            self.n_proc = n_proc
 
     n_workers = 4
     items = [
