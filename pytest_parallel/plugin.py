@@ -10,9 +10,14 @@ import argparse
 import resource
 import pytest
 from _pytest.terminal import TerminalReporter
+#import signal
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
+    #def sig_handler(sig, frame):
+    #  print(f'\n\n\n\nSIGNAL_HANDLER caught {sig}')
+    #signal.signal(11, sig_handler)
+
     parser.addoption(
         '--scheduler',
         dest='scheduler',
@@ -97,6 +102,14 @@ def pytest_configure(config):
         assert not slurm_srun_options, 'Option `--slurms-run-options` only available when `--scheduler=slurm`'
         assert not slurm_additional_cmds, 'Option `--slurm-additional-cmds` only available when `--scheduler=slurm`'
         assert not slurm_file, 'Option `--slurm-file` only available when `--scheduler=slurm`'
+
+    if (scheduler == 'shell' or scheduler == 'slurm') and not is_worker:
+        from mpi4py import MPI
+        assert MPI.COMM_WORLD.size == 1, 'Do not launch `pytest_parallel` on more that one process\n' \
+                                         'when `--scheduler=shell` or `--scheduler=slurm`.\n' \
+                                         '`pytest_parallel` spawn mpi processes itself.\n' \
+                                         f'You may want to use --n-workers={MPI.COMM_WORLD.size}.'
+
 
 
     if scheduler == 'slurm' and not is_worker:
