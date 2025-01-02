@@ -92,7 +92,6 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
     # launch `mpiexec` for each item
     script_prolog = ''
     script_prolog += '#!/bin/bash\n\n'
-    #script_prolog += 'return_codes=(' + ' '.join(['0'*len(items)]) + ')\n\n' # bash array that will contain the return codes of each test TODO DEL
 
     socket_flags=f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
     cmds = []
@@ -120,18 +119,11 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
 
     ## 3. wait everyone
     script += '\nwait\n'
-
-    # TODO DEL
-    ## 4. send error codes to to the server
-    #script += f'\npython -m pytest_parallel.send_return_codes {socket_flags} --return_codes=\"' + '${return_codes[@]}' + '\"\n'
-
    
     Path('.pytest_parallel').mkdir(exist_ok=True)
     shutil.rmtree('.pytest_parallel/tmp', ignore_errors=True)
     Path('.pytest_parallel/tmp').mkdir()
     script_path = f'.pytest_parallel/pytest_static_sched_{i_step+1}.sh'
-    #print('script_path  = ',script_path)
-    #print('sscript= ',script)
     with open(script_path,'w') as f:
       f.write(script)
 
