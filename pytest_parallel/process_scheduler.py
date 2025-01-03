@@ -1,4 +1,5 @@
 import pytest
+import shutil
 import subprocess
 import socket
 import pickle
@@ -35,8 +36,7 @@ def parse_job_id_from_submission_output(s):
 # https://stackoverflow.com/a/34177358
 def command_exists(cmd_name):
     """Check whether `name` is on PATH and marked as executable."""
-    from shutil import which
-    return which(cmd_name) is not None
+    return shutil.which(cmd_name) is not None
 
 def _get_my_ip_address():
   hostname = socket.gethostname()
@@ -80,8 +80,8 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
         slurm_header  = '#!/bin/bash\n'
         slurm_header += '\n'
         slurm_header += '#SBATCH --job-name=pytest_parallel\n'
-        slurm_header += '#SBATCH --output=.pytest_parallel/slurm.%j.out\n'
-        slurm_header += '#SBATCH --error=.pytest_parallel/slurm.%j.err\n'
+        slurm_header += '#SBATCH --output=.pytest_parallel/slurm.out\n'
+        slurm_header += '#SBATCH --error=.pytest_parallel/slurm.err\n'
         for opt in slurm_conf['options']:
             slurm_header += f'#SBATCH {opt}\n'
         slurm_header += f'#SBATCH --ntasks={ntasks}'
@@ -93,22 +93,33 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
     srun_options = slurm_conf['srun_options']
     if srun_options is None:
       srun_options = ''
-    worker_flags=f"--_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
+    socket_flags = f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
     cmds = ''
     if slurm_conf['additional_cmds'] is not None:
         cmds += slurm_conf['additional_cmds'] + '\n'
     for item in items:
         test_idx = item.original_index
-        test_out_file_base = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
-        cmd =  f'srun {srun_options} --exclusive --ntasks={item.n_proc} -l'
-        cmd += f' python3 -u -m pytest -s {worker_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
-        cmd += f' > {test_out_file_base} 2>&1'
-        cmd += ' &\n' # launch everything in parallel
+        test_out_file = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
+        cmd = '('
+        cmd += f'srun {srun_options}'
+        cmd +=  ' --exclusive'
+        cmd +=  ' --kill-on-bad-exit=1' # make fatal errors (e.g. segfault) kill the whole srun step. Else, deadlock (at least with Intel MPI)
+        cmd += f' --ntasks={item.n_proc}'
+        cmd +=  ' -l' # 
+        cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
+        cmd += f' > {test_out_file} 2>&1'
+        cmd += f' ; python -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
+        cmd +=  ')'
+        cmd +=  ' &\n' # launch everything in parallel
         cmds += cmd
     cmds += 'wait\n'
 
     job_cmds = f'{slurm_header}\n\n{cmds}'
+
     Path('.pytest_parallel').mkdir(exist_ok=True)
+    shutil.rmtree('.pytest_parallel/tmp', ignore_errors=True)
+    Path('.pytest_parallel/tmp').mkdir()
+
     with open('.pytest_parallel/job.sh','w') as f:
       f.write(job_cmds)
 

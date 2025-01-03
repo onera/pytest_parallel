@@ -14,10 +14,6 @@ from _pytest.terminal import TerminalReporter
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
-    #def sig_handler(sig, frame):
-    #  print(f'\n\n\n\nSIGNAL_HANDLER caught {sig}')
-    #signal.signal(11, sig_handler)
-
     parser.addoption(
         '--scheduler',
         dest='scheduler',
@@ -56,9 +52,14 @@ def pytest_addoption(parser):
     #    because it can mess SLURM `srun`
     if "--scheduler=slurm" in sys.argv:
         assert 'mpi4py.MPI' not in sys.modules, 'Internal pytest_parallel error: mpi4py.MPI should not be imported' \
-                                               ' when we are about to register and environment for SLURM' \
-                                               ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
-                                               ' and SLURM does not like that)'
+                                                ' when we are about to register and environment for SLURM' \
+                                                ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
+                                                ' and SLURM does not like that)'
+        assert os.getenv('I_MPI_MPIRUN') is None,  'Internal pytest_parallel error: the environment variable I_MPI_MPIRUN is set' \
+                                                  f' with value "{os.getenv("I_MPI_MPIRUN")}"' \
+                                                   ' while pytest was invoked with "--scheduler=slurm".\n' \
+                                                   ' This indicates that pytest was run through MPI, and SLURM generally does not like that.\n' \
+                                                   ' With "--scheduler=slurm", just run pytest directly, not through `mpirun/mpiexec/srun`, and let pytest launch MPI itself.'
 
         r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
 

@@ -36,7 +36,7 @@ def test_par_crash(comm):
 
 @pytest_parallel.mark.parallel(2)
 def test_par_pass_crash(comm):
-  if comm.rank==1:
+  if comm.rank==0:
     assert 1
   if comm.rank==1:
     signal.raise_signal(11) # SIGSEGV
