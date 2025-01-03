@@ -2,13 +2,10 @@ import pytest
 
 from mpi4py import MPI
 
-import socket
 from pathlib import Path
 import pickle
-from . import socket_utils
 from .utils import get_n_proc_for_test, run_item_test
 from .gather_report import gather_report_on_local_rank_0
-import signal
 
 class ProcessWorker:
     def __init__(self, scheduler_ip_address, scheduler_port, test_idx, detach):
@@ -16,7 +13,6 @@ class ProcessWorker:
         self.scheduler_port = scheduler_port
         self.test_idx = test_idx
         self.detach = detach
-        self.use_sockets = False
 
 
     def _file_path(self, when):
@@ -41,27 +37,18 @@ class ProcessWorker:
                     path.unlink()
 
         if comm.size != test_comm_size: # fatal error, SLURM and MPI do not interoperate correctly
-            error_info = f'FATAL ERROR in pytest_parallel with slurm scheduling: test `{item.nodeid}`' \
-                         f' uses a `comm` of size {test_comm_size} but was launched with size {comm.Get_size()}.\n' \
-                         f' This generally indicates that `srun` does not interoperate correctly with MPI.'
-            if self.use_sockets:
-                item.test_info['fatal_error'] = error_info
-            else:
-                if comm.rank == 0:
-                    file_path = self._file_path('fatal_error')
-                    with open(file_path, "w") as f:
-                        f.write(error_info)
+            if comm.rank == 0:
+                error_info = f'FATAL ERROR in pytest_parallel with slurm scheduling: test `{item.nodeid}`' \
+                             f' uses a `comm` of size {test_comm_size} but was launched with size {comm.Get_size()}.\n' \
+                             f' This generally indicates that `srun` does not interoperate correctly with MPI.'
+                file_path = self._file_path('fatal_error')
+                with open(file_path, "w") as f:
+                    f.write(error_info)
             return True
 
         # run the test
         nextitem = None
         run_item_test(item, nextitem, session)
-
-        if self.use_sockets:
-            if not self.detach and comm.rank == 0: # not detached: proc 0 is expected to send results to scheduling process
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.connect((self.scheduler_ip_address, self.scheduler_port))
-                    socket_utils.send(s, pickle.dumps(item.test_info))
 
         if item.test_info['fatal_error'] is not None:
             assert 0, f'{item.test_info["fatal_error"]}'
@@ -88,9 +75,6 @@ class ProcessWorker:
         report_info = {'outcome' : report.outcome,
                        'longrepr': report.longrepr,
                        'duration': report.duration, }
-        if self.use_sockets:
-            report.test_info.update({report.when: report_info})
-        else:
-            if sub_comm.rank == 0:
-                with open(self._file_path(report.when), "wb") as f:
-                    f.write(pickle.dumps(report_info))
+        if sub_comm.rank == 0:
+            with open(self._file_path(report.when), "wb") as f:
+                f.write(pickle.dumps(report_info))
