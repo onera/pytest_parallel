@@ -26,7 +26,7 @@ def pytest_addoption(parser):
 
     parser.addoption('--timeout', dest='timeout', type=int, default=7200, help='Timeout')
 
-    parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue --n_tasks=4"')
+    parser.addoption('--slurm-options', dest='slurm_options', type=str, help='list of SLURM options e.g. "--time=00:30:00 --qos=my_queue"')
     parser.addoption('--slurm-srun-options', dest='slurm_srun_options', type=str, help='list of SLURM srun options e.g. "--mem-per-cpu=4GB"')
     parser.addoption('--slurm-additional-cmds', dest='slurm_additional_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
     parser.addoption('--slurm-file', dest='slurm_file', type=str, help='Path to file containing header of SLURM job') # TODO DEL
@@ -59,7 +59,8 @@ def pytest_addoption(parser):
                                                   f' with value "{os.getenv("I_MPI_MPIRUN")}"' \
                                                    ' while pytest was invoked with "--scheduler=slurm".\n' \
                                                    ' This indicates that pytest was run through MPI, and SLURM generally does not like that.\n' \
-                                                   ' With "--scheduler=slurm", just run pytest directly, not through `mpirun/mpiexec/srun`, and let pytest launch MPI itself.'
+                                                   ' With "--scheduler=slurm", just run `pytest` directly, not through `mpirun/mpiexec/srun`,\n' \
+                                                   ' because it will launch MPI itself (you may want to use --n-workers=<number of processes>).'
 
         r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
 
@@ -108,7 +109,7 @@ def pytest_configure(config):
         from mpi4py import MPI
         assert MPI.COMM_WORLD.size == 1, 'Do not launch `pytest_parallel` on more that one process\n' \
                                          'when `--scheduler=shell` or `--scheduler=slurm`.\n' \
-                                         '`pytest_parallel` spawn mpi processes itself.\n' \
+                                         '`pytest_parallel` spawns MPI processes itself.\n' \
                                          f'You may want to use --n-workers={MPI.COMM_WORLD.size}.'
 
 
@@ -120,6 +121,8 @@ def pytest_configure(config):
         if slurm_file:
             assert not slurm_options, 'You need to specify either `--slurm-options` or `--slurm-file`, but not both'
             assert not slurm_additional_cmds, 'You cannot specify `--slurm-additional-cmds` together with `--slurm-file`'
+
+        assert '-n=' not in slurm_options and '--ntasks=' not in slurm_options, 'Do not specify `-n/--ntasks` in `--slurm-options` (it is deduced from the `--n-worker` value).'
 
         from .process_scheduler import ProcessScheduler
 

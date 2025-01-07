@@ -29,12 +29,11 @@ class ProcessWorker:
         item.test_info = {'test_idx': self.test_idx, 'fatal_error': None}
 
 
-        # remove previous file if they existed
+        # check there is no file from a previous run
         if comm.rank == 0:
             for when in {'fatal_error', 'setup', 'call', 'teardown'}:
                 path = self._file_path(when)
-                if path.exists():
-                    path.unlink()
+                assert not path.exists(), f'INTERNAL FATAL ERROR in pytest_parallel: file "{path}" should not exist at this point'
 
         if comm.size != test_comm_size: # fatal error, SLURM and MPI do not interoperate correctly
             if comm.rank == 0:
