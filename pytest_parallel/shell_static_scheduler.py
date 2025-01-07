@@ -1,77 +1,17 @@
 import pytest
 import os
-import shutil
 import stat
 import subprocess
 import socket
 import pickle
 from pathlib import Path
-from . import socket_utils
-from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
+from .utils.socket import recv as socket_recv, setup_socket
+from .utils.items import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index, mark_skip
+from .utils.file import remove_exotic_chars, create_folders
 from .algo import partition
 from .static_scheduler_utils import group_items_by_parallel_steps
 from mpi4py import MPI
 import numpy as np
-
-def mark_skip(item, ntasks):
-    n_proc_test = get_n_proc_for_test(item)
-    skip_msg = f"Not enough procs to execute: {n_proc_test} required but only {ntasks} available"
-    item.add_marker(pytest.mark.skip(reason=skip_msg), append=False)
-    item.marker_mpi_skip = True
-
-def replace_sub_strings(s, subs, replacement):
-  res = s
-  for sub in subs:
-    res = res.replace(sub,replacement)
-  return res
-
-def remove_exotic_chars(s):
-  return replace_sub_strings(str(s), ['[',']','/', ':'], '_')
-
-def parse_job_id_from_submission_output(s):
-    # At this point, we are trying to guess -_-
-    # Here we supposed that the command for submitting the job
-    #    returned string with only one number,
-    #    and that this number is the job id
-    import re
-    return int(re.search(r'\d+', str(s)).group())
-
-
-# https://stackoverflow.com/a/34177358
-def command_exists(cmd_name):
-    """Check whether `name` is on PATH and marked as executable."""
-    return shutil.which(cmd_name) is not None
-
-def _get_my_ip_address():
-  hostname = socket.gethostname()
-
-  assert command_exists('tracepath'), 'pytest_parallel SLURM scheduler: command `tracepath` is not available'
-  cmd = ['tracepath','-4','-n',hostname]
-  r = subprocess.run(cmd, stdout=subprocess.PIPE)
-  assert r.returncode==0, f'pytest_parallel SLURM scheduler: error running command `{" ".join(cmd)}`'
-  ips = r.stdout.decode("utf-8")
-
-  try:
-    my_ip = ips.split('\n')[0].split(':')[1].split()[0]
-  except:
-    assert 0, f'pytest_parallel SLURM scheduler: error parsing result `{ips}` of command `{" ".join(cmd)}`'
-  import ipaddress
-  try:
-    ipaddress.ip_address(my_ip)
-  except ValueError:
-    assert 0, f'pytest_parallel SLURM scheduler: error parsing result `{ips}` of command `{" ".join(cmd)}`'
-
-  return my_ip
-
-def setup_socket(socket):
-    # Find IP our address
-    SCHEDULER_IP_ADDRESS = _get_my_ip_address()
-
-    # setup master's socket
-    socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
-    socket.listen()
-    port = socket.getsockname()[1]
-    return SCHEDULER_IP_ADDRESS, port
 
 def mpi_command(current_proc, n_proc):
     mpi_vendor = MPI.get_vendor()[0]
@@ -85,7 +25,7 @@ def mpi_command(current_proc, n_proc):
     else:
         assert 0, f'Unknown MPI implementation "{mpi_vendor}"'
 
-def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, ntasks, i_step, n_step):
+def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_invoke_params, ntasks, i_step, n_step):
     # sort item by comm size to launch bigger first (Note: in case SLURM prioritize first-received items)
     items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
 
@@ -93,12 +33,12 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
     script_prolog = ''
     script_prolog += '#!/bin/bash\n\n'
 
-    socket_flags=f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
+    socket_flags=f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port} --_session_folder={session_folder}"
     cmds = []
     current_proc = 0
     for i,item in enumerate(items):
         test_idx = item.original_index
-        test_out_file = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
+        test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
         cmd = '('
         cmd += mpi_command(current_proc, item.n_proc)
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
@@ -120,10 +60,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, main_invoke_params, n
     ## 3. wait everyone
     script += '\nwait\n'
    
-    Path('.pytest_parallel').mkdir(exist_ok=True)
-    shutil.rmtree('.pytest_parallel/tmp', ignore_errors=True)
-    Path('.pytest_parallel/tmp').mkdir()
-    script_path = f'.pytest_parallel/pytest_static_sched_{i_step+1}.sh'
+    script_path = f'.pytest_parallel/{session_folder}/pytest_static_sched_{i_step+1}.sh'
     with open(script_path,'w') as f:
       f.write(script)
 
@@ -143,7 +80,7 @@ def receive_items(items, session, socket, n_item_to_recv):
     while n_item_to_recv>0:
         conn, addr = socket.accept()
         with conn:
-            msg = socket_utils.recv(conn)
+            msg = socket_recv(conn)
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
         #print(f"{test_info=}")
         if 'signal_info' in test_info:
@@ -208,11 +145,12 @@ class ShellStaticScheduler:
             run_item_test(item, nextitem, session)
 
         # schedule tests to run
-        SCHEDULER_IP_ADDRESS,port = setup_socket(self.socket)
+        SCHEDULER_IP_ADDRESS, port = setup_socket(self.socket)
+        session_folder = create_folders()
         n_step = len(items_by_steps)
         for i_step,items in enumerate(items_by_steps):
             n_item_to_receive = len(items)
-            sub_process = submit_items(items, SCHEDULER_IP_ADDRESS, port, self.main_invoke_params, self.ntasks, i_step, n_step)
+            sub_process = submit_items(items, SCHEDULER_IP_ADDRESS, port, session_folder, self.main_invoke_params, self.ntasks, i_step, n_step)
             if not self.detach: # The job steps are supposed to send their reports
                 receive_items(session.items, session, self.socket, n_item_to_receive)
             returncode = sub_process.wait() # at this point, the sub-process should be done since items have been received

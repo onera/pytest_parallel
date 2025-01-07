@@ -219,7 +219,16 @@ SLURM takes care of the scheduling. This scheduler as specific options:
 
 ## FAQ ##
 
-1. **pytest_parallel** gives me a new communicator for each test, but my code only uses `MPI.COMM_WORLD`, how can I use **pytest_parallel**?
+### Which MPI implementation is supported?
+
+**pytest_parallel** has currently be tested only with OpenMPI and Intel MPI. Other MPI implementation are also supposed to work. An exception is the `shell` scheduler that use implementation-specific environment variables to pin the processes to cores. Feel free to give use feedback/patches.
+
+### Which job scheduler is available?
+
+Currently SLURM is the only job scheduler available. Other job schedulers (PBS, LFS...) are not supported currently. If you don't use SLURM, the `shell` scheduler may be enought for your tests as long as you dont want to use more than one compute node.
+
+
+### **pytest_parallel** gives me a new communicator for each test, but my code only uses `MPI.COMM_WORLD`, how can I use **pytest_parallel**?
 
 The [process-isolate schedulers](#process-isolate-schedulers) can be used with tests using different sizes of `MPI.COMM_WORLD`. The `comm` fixture can then be discarded:
 
@@ -246,28 +255,24 @@ For unit tests, process-isolate schedulers are very slow, and **[process-reuse s
 It would be possible to develop hybrid process-reuse schedulers where processes are re-used, but only among tests of the same communicator size (and repeat the operation for as many communicator sizes there are on the test suite). If you feel the need, write a feature request and maybe we will implement it.
 
 
-2. Can I write an MPI test with no fixed number of processes and let **pytest_parallel** use `MPI.COMM_WORLD`?
+### Can I write an MPI test with no fixed number of processes and let **pytest_parallel** use `MPI.COMM_WORLD`?
 
 Not currently. **pytest_parallel** is designed to dissociate the parallelism specified for each test and the resources given to execute them.
 If the need arizes, we could however:
 - implement a mode that would use the number of processes given by the command line instead of the one specified with each test
 - add a `@pytest_parallel.mark.parallel_from_context` decorator that would mark the test to be run with the maximum parallelism specified (that is, the number of processes given by the command line)
 
-3. My test suite deadlocks. How do I pinpoint the test at fault?
+### My test suite deadlocks. How do I pinpoint the test at fault?
 
 There is no magic technique. Try to narrow it down by using the [sequential scheduler](#sequential-scheduler).
 
 A solution that we need to implement is to handle timeouts for the [process-isolate schedulers](#process-isolate-schedulers). Feel free to submit a feature request.
 
-4. Why is the [shell scheduler](#shell-scheduler) using a static scheduling strategy?
+### Why is the [shell scheduler](#shell-scheduler) using a static scheduling strategy?
 
 The [shell scheduler](#shell-scheduler) uses the same scheduling algorithm as the [static scheduler](#static-scheduler) because it is easier to implement. We hope to also implement a dynamic scheduling strategy if we feel the need for it.
 
-5. Is SLURM the only job scheduler available?
-
-Currently yes.
-
-6. I want to use the static shell scheduler, but I have the error `MPI_INIT failed`
+### I want to use the static shell scheduler, but I have the error `MPI_INIT failed`
 
 On some systems, using `mpi4py` without `mpirun` does not work. For example, using:
 ```Bash
@@ -292,10 +297,9 @@ In this case, try:
 mpirun -np 1 pytest --n-workers=4 --scheduler=shell test_pytest_parallel.py
 ```
 
-7. Can I use **pytest_parallel** with MPI and OpenMP/pthreads/TBB?
+### Can I use **pytest_parallel** with MPI and OpenMP/pthreads/TBB?
 
 We do not use **pytest_parallel** with multi-treading, any feedback is welcomed! Regarding the `shell` scheduler, we explicitly pin one MPI process per core, with is probably wrong with multiple threads by MPI process.
-
 
 ## Plugin compatibility ##
 

@@ -2,7 +2,7 @@ import argparse
 import socket
 import pickle
 from pathlib import Path
-from . import socket_utils
+from .utils.socket import send as socket_send
 from _pytest._code.code import (
     ExceptionChainRepr,
     ReprTraceback,
@@ -14,13 +14,14 @@ parser = argparse.ArgumentParser(description='Send return the codes of the tests
 
 parser.add_argument('--_scheduler_ip_address', dest='_scheduler_ip_address', type=str)
 parser.add_argument('--_scheduler_port', dest='_scheduler_port', type=int)
+parser.add_argument('--_session_folder', dest='_session_folder', type=str)
 parser.add_argument('--_test_idx', dest='_test_idx', type=int)
 parser.add_argument('--_test_name', dest='_test_name', type=str)
 
 args = parser.parse_args()
 
 def _file_path(when):
-  return Path(f'.pytest_parallel/tmp/{args._test_idx}_{when}')
+  return Path(f'.pytest_parallel/{args._session_folder}/_partial/{args._test_idx}_{when}')
 
 test_info = {'test_idx': args._test_idx, 'fatal_error': None} # TODO no fatal_error=None (absense means no error)
 
@@ -68,5 +69,5 @@ for when in ('setup', 'call', 'teardown'):
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
   s.connect((args._scheduler_ip_address, args._scheduler_port))
-  socket_utils.send(s, pickle.dumps(test_info))
+  socket_send(s, pickle.dumps(test_info))
 

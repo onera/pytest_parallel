@@ -26,3 +26,10 @@ def run_item_test(item, nextitem, session):
 def mark_original_index(items):
     for i, item in enumerate(items):
         item.original_index = i
+
+
+def mark_skip(item, ntasks):
+    n_proc_test = get_n_proc_for_test(item)
+    skip_msg = f"Not enough procs to execute: {n_proc_test} required but only {ntasks} available"
+    item.add_marker(pytest.mark.skip(reason=skip_msg), append=False)
+    item.marker_mpi_skip = True

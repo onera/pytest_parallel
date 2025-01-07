@@ -3,8 +3,8 @@ import pytest
 from mpi4py import MPI
 
 from .algo import partition, lower_bound
-from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
-from .utils_mpi import number_of_working_processes, is_dyn_master_process
+from .utils.items import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
+from .utils.mpi import number_of_working_processes, is_dyn_master_process
 from .gather_report import gather_report_on_local_rank_0
 from .static_scheduler_utils import group_items_by_parallel_steps
 

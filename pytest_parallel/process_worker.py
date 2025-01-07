@@ -4,19 +4,20 @@ from mpi4py import MPI
 
 from pathlib import Path
 import pickle
-from .utils import get_n_proc_for_test, run_item_test
+from .utils.items import get_n_proc_for_test, run_item_test
 from .gather_report import gather_report_on_local_rank_0
 
 class ProcessWorker:
-    def __init__(self, scheduler_ip_address, scheduler_port, test_idx, detach):
+    def __init__(self, scheduler_ip_address, scheduler_port, session_folder, test_idx, detach):
         self.scheduler_ip_address = scheduler_ip_address
         self.scheduler_port = scheduler_port
+        self.session_folder = session_folder
         self.test_idx = test_idx
         self.detach = detach
 
 
     def _file_path(self, when):
-        return Path(f'.pytest_parallel/tmp/{self.test_idx}_{when}')
+        return Path(f'.pytest_parallel/{self.session_folder}/_partial/{self.test_idx}_{when}')
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
@@ -35,6 +36,7 @@ class ProcessWorker:
                 path = self._file_path(when)
                 assert not path.exists(), f'INTERNAL FATAL ERROR in pytest_parallel: file "{path}" should not exist at this point'
 
+        # check the number of procs matches the one specified by the test
         if comm.size != test_comm_size: # fatal error, SLURM and MPI do not interoperate correctly
             if comm.rank == 0:
                 error_info = f'FATAL ERROR in pytest_parallel with slurm scheduling: test `{item.nodeid}`' \

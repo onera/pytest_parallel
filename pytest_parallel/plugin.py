@@ -10,7 +10,6 @@ import argparse
 import resource
 import pytest
 from _pytest.terminal import TerminalReporter
-#import signal
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -44,6 +43,7 @@ def pytest_addoption(parser):
     parser.addoption('--_worker', dest='_worker', action='store_true', help='Internal pytest_parallel option')
     parser.addoption('--_scheduler_ip_address', dest='_scheduler_ip_address', type=str, help='Internal pytest_parallel option')
     parser.addoption('--_scheduler_port', dest='_scheduler_port', type=int, help='Internal pytest_parallel option')
+    parser.addoption('--_session_folder', dest='_session_folder', type=str, help='Internal pytest_parallel option')
     parser.addoption('--_test_idx'    , dest='_test_idx'    , type=int, help='Internal pytest_parallel option')
 
     # Note:
@@ -124,7 +124,7 @@ def pytest_configure(config):
 
         assert '-n=' not in slurm_options and '--ntasks=' not in slurm_options, 'Do not specify `-n/--ntasks` in `--slurm-options` (it is deduced from the `--n-worker` value).'
 
-        from .process_scheduler import ProcessScheduler
+        from .slurm_scheduler import SlurmScheduler
 
         enable_terminal_reporter = True
 
@@ -144,7 +144,7 @@ def pytest_configure(config):
             'export_env'     : slurm_export_env,
             'sub_command'    : slurm_sub_command,
         }
-        plugin = ProcessScheduler(main_invoke_params, n_workers, slurm_conf, detach)
+        plugin = SlurmScheduler(main_invoke_params, n_workers, slurm_conf, detach)
 
     elif scheduler == 'shell' and not is_worker:
         from .shell_static_scheduler import ShellStaticScheduler
@@ -159,7 +159,7 @@ def pytest_configure(config):
         from mpi4py import MPI
         from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler
         from .process_worker import ProcessWorker
-        from .utils_mpi import spawn_master_process, should_enable_terminal_reporter
+        from .utils.mpi import spawn_master_process, should_enable_terminal_reporter
 
         global_comm = MPI.COMM_WORLD
         enable_terminal_reporter = should_enable_terminal_reporter(global_comm, scheduler)
@@ -174,8 +174,9 @@ def pytest_configure(config):
         elif (scheduler == 'slurm' or scheduler == 'shell') and is_worker:
             scheduler_ip_address = config.getoption('_scheduler_ip_address')
             scheduler_port = config.getoption('_scheduler_port')
+            session_folder = config.getoption('_session_folder')
             test_idx = config.getoption('_test_idx')
-            plugin = ProcessWorker(scheduler_ip_address, scheduler_port, test_idx, detach)
+            plugin = ProcessWorker(scheduler_ip_address, scheduler_port, session_folder, test_idx, detach)
         else:
             assert 0
 
