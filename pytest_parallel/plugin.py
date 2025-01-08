@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 import argparse
-import resource
 import pytest
 from _pytest.terminal import TerminalReporter
 
@@ -78,11 +77,18 @@ def _invoke_params(args):
     return ' '.join(quoted_invoke_params)
 
 # --------------------------------------------------------------------------
+def _set_timeout(timeout):
+    if sys.platform != "win32":
+        import resource
+        resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout))
+    # if windows, we don't know how to do that
+
+# --------------------------------------------------------------------------
 @pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     # Set timeout
     timeout = config.getoption('timeout')
-    resource.setrlimit(resource.RLIMIT_CPU, (timeout, timeout))
+    _set_timeout(timeout)
 
     # Get options and check dependent/incompatible options
     scheduler = config.getoption('scheduler')

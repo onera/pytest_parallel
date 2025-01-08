@@ -221,7 +221,11 @@ SLURM takes care of the scheduling. This scheduler as specific options:
 
 ### Which MPI implementation is supported?
 
-**pytest_parallel** has currently be tested only with OpenMPI and Intel MPI. Other MPI implementation are also supposed to work. An exception is the `shell` scheduler that use implementation-specific environment variables to pin the processes to cores. Feel free to give use feedback/patches.
+**pytest_parallel** has currently been tested and is used daily with OpenMPI and Intel MPI. MPICH is also regularly tested though the GitHub CI with the process-reuse schedulers. Other MPI implementations are also supposed to work. An exception is the `shell` scheduler that use implementation-specific environment variables to pin the processes to cores. Feel free to give use feedback/patches.
+
+### Which OS is supported?
+
+**pytest_parallel** is daily tested and used on Linux machines. However, on the GitHub CI, the `sequential`, `static` and `dynamic` schedulers work with Mac OS, and the `sequential` and `static` schedulers work with Windows.
 
 ### Which job scheduler is available?
 
@@ -383,3 +387,4 @@ Any contributions are welcome: bug report, feature requests, general feedback, p
 @pytest_parallel.mark.parallel(4, exclusive_numa_domain='cpu')
 ```
 * Dynamic scheduler: more asynchrony (send -> isend)
+* Add the process-isolate scheduler to the CI

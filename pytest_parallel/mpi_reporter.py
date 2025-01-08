@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import sys
 from mpi4py import MPI
 
 from .algo import partition, lower_bound
@@ -28,7 +29,8 @@ def create_sub_comm_of_size(global_comm, n_proc, mpi_comm_creation_function):
     if mpi_comm_creation_function == 'MPI_Comm_create':
         return sub_comm_from_ranks(global_comm, range(0,n_proc))
     elif mpi_comm_creation_function == 'MPI_Comm_split':
-        if i_rank < n_proc_test:
+        i_rank = global_comm.rank
+        if i_rank < n_proc:
             color = 1
         else:
             color = MPI.UNDEFINED
@@ -71,12 +73,17 @@ def add_sub_comm(items, global_comm, test_comm_creation, mpi_comm_creation_funct
                 assert 0, 'Unknown test MPI communicator creation strategy. Available: `by_rank`, `by_test`'
 
 class SequentialScheduler:
-    def __init__(self, global_comm, test_comm_creation='by_rank', mpi_comm_creation_function='MPI_Comm_create', barrier_at_test_start=True, barrier_at_test_end=True):
+    def __init__(self, global_comm):
         self.global_comm = global_comm.Dup()  # ensure that all communications within the framework are private to the framework
-        self.test_comm_creation = test_comm_creation
-        self.mpi_comm_creation_function = mpi_comm_creation_function
-        self.barrier_at_test_start = barrier_at_test_start
-        self.barrier_at_test_end   = barrier_at_test_end
+
+        # These parameters are not accessible through the API, but are left here for tweaking and experimenting
+        self.test_comm_creation = 'by_rank' # possible values : 'by_rank' | 'by_test'
+        self.mpi_comm_creation_function = 'MPI_Comm_create' # possible values : 'MPI_Comm_create' | 'MPI_Comm_split'
+        self.barrier_at_test_start = True
+        self.barrier_at_test_end   = True
+        if sys.platform == "win32":
+            self.mpi_comm_creation_function = 'MPI_Comm_split' # because 'MPI_Comm_create' uses `Create_group`,
+                                                               # that is not implemented in mpi4py for Windows
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, config, items):
@@ -222,14 +229,6 @@ class StaticScheduler:
         )
 
         for i, item in enumerate(items):
-            # nextitem = items[i + 1] if i + 1 < len(items) else None
-            # For optimization purposes, it would be nice to have the previous commented line
-            # (`nextitem` is only used internally by PyTest in _setupstate.teardown_exact)
-            # Here, it does not work:
-            #   it seems that things are messed up on rank 0
-            #   because the nextitem might not be run (see pytest_runtest_setup/call/teardown hooks just above)
-            # In practice though, it seems that it is not the main thing that slows things down...
-
             nextitem = None
             run_item_test(item, nextitem, session)
 
