@@ -13,6 +13,6 @@ def remove_exotic_chars(s):
 
 def create_folders():
   Path('.pytest_parallel').mkdir(exist_ok=True)
-  session_folder_abs = Path(tempfile.mkdtemp(dir='.pytest_parallel'))
+  session_folder_abs = Path(tempfile.mkdtemp(dir='.pytest_parallel')) # create a folder that did not already exist
   Path(session_folder_abs/'_partial').mkdir()
   return session_folder_abs.name

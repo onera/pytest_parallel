@@ -3,18 +3,11 @@ import subprocess
 import socket
 import pickle
 from pathlib import Path
-from .utils.socket import recv as socket_recv, setup_socket
+from .utils.socket import recv as socket_recv
+from .utils.socket import setup_socket
 from .utils.items import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index, mark_skip
 from .utils.file import remove_exotic_chars, create_folders
 from .algo import partition
-
-def parse_job_id_from_submission_output(s):
-    # At this point, we are trying to guess -_-
-    # Here we supposed that the command for submitting the job
-    #    returned string with only one number,
-    #    and that this number is the job id
-    import re
-    return int(re.search(r'\d+', str(s)).group())
 
 def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntasks, slurm_conf):
     SCHEDULER_IP_ADDRESS, port = setup_socket(socket)
@@ -45,8 +38,8 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
       srun_options = ''
     socket_flags = f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port} --_session_folder={session_folder}"
     cmds = ''
-    if slurm_conf['additional_cmds'] is not None:
-        cmds += slurm_conf['additional_cmds'] + '\n'
+    if slurm_conf['init_cmds'] is not None:
+        cmds += slurm_conf['init_cmds'] + '\n'
     for item in items:
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
@@ -58,7 +51,7 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
         cmd +=  ' -l' # 
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file} 2>&1'
-        cmd += f' ; python -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
+        cmd += f' ; python3 -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
         cmd +=  ')'
         cmd +=  ' &\n' # launch everything in parallel
         cmds += cmd
@@ -73,23 +66,17 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
     with open(f'.pytest_parallel/{session_folder}/env_vars.sh','wb') as f:
       f.write(pytest._pytest_parallel_env_vars)
 
-    if slurm_conf['sub_command'] is None:
-        if slurm_conf['export_env']:
-            sbatch_cmd = f'sbatch --parsable --export-file=.pytest_parallel/{session_folder}/env_vars.sh .pytest_parallel/{session_folder}/job.sh'
-        else:
-            sbatch_cmd = f'sbatch --parsable .pytest_parallel/{session_folder}/job.sh'
+    if slurm_conf['export_env']:
+        sbatch_cmd = f'sbatch --parsable --export-file=.pytest_parallel/{session_folder}/env_vars.sh .pytest_parallel/{session_folder}/job.sh'
     else:
-        sbatch_cmd = slurm_conf['sub_command'] + ' .pytest_parallel/{session_folder}/job.sh'
+        sbatch_cmd = f'sbatch --parsable .pytest_parallel/{session_folder}/job.sh'
 
     p = subprocess.Popen([sbatch_cmd], shell=True, stdout=subprocess.PIPE)
     print('\nSubmitting tests to SLURM...')
     returncode = p.wait()
     assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
 
-    if slurm_conf['sub_command'] is None:
-        slurm_job_id = int(p.stdout.read())
-    else:
-        slurm_job_id = parse_job_id_from_submission_output(p.stdout.read())
+    slurm_job_id = int(p.stdout.read())
 
     print(f'SLURM job {slurm_job_id} has been submitted')
     return slurm_job_id

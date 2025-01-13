@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 import sys
 from mpi4py import MPI
@@ -321,7 +320,7 @@ def schedule_test(item, available_procs, inter_comm):
 
     # mark the procs as busy
     for sub_rank in sub_ranks:
-        available_procs[sub_rank] = False
+        available_procs[sub_rank] = 0
 
     # TODO isend would be slightly better (less waiting)
     for sub_rank in sub_ranks:
@@ -357,7 +356,7 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
     # the procs are now available
     for sub_rank in sub_ranks:
-        available_procs[sub_rank] = True
+        available_procs[sub_rank] = 1
 
     # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
     nextitem = None  # not known at this point
@@ -365,7 +364,7 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
 
 
 def wait_last_tests_to_complete(items_to_run, session, available_procs, inter_comm):
-    while np.sum(available_procs) < len(available_procs):
+    while sum(available_procs) < len(available_procs):
         wait_test_to_complete(items_to_run, session, available_procs, inter_comm)
 
 
@@ -450,10 +449,10 @@ class DynamicScheduler:
 
             # schedule tests to run
             items_left_to_run = sorted(items_to_run, key=lambda item: item.n_proc)
-            available_procs = np.ones(n_workers, dtype=np.int8)
+            available_procs = [1] * n_workers
 
             while len(items_left_to_run) > 0:
-                n_av_procs = np.sum(available_procs)
+                n_av_procs = sum(available_procs)
 
                 item_idx = item_with_biggest_admissible_n_proc(items_left_to_run, n_av_procs)
 

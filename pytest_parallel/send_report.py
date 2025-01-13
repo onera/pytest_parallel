@@ -26,25 +26,26 @@ def _file_path(when):
 test_info = {'test_idx': args._test_idx, 'fatal_error': None} # TODO no fatal_error=None (absense means no error)
 
 # 'fatal_error' file
-try:
-  file_path = _file_path('fatal_error')
+file_path = _file_path('fatal_error')
+if file_path.exists():
   with open(file_path, 'r') as file:
     fatal_error = file.read()
     test_info['fatal_error'] = fatal_error
-except FileNotFoundError: # There was no fatal error
-  pass
 
 
 # 'setup/call/teardown' files
 already_failed = False
 for when in ('setup', 'call', 'teardown'):
-  try:
-    file_path = _file_path(when)
-    with open(file_path, 'rb') as file:
-      report_info = file.read()
-      report_info = pickle.loads(report_info)
-      test_info[when] = report_info
-  except FileNotFoundError: # Supposedly not found because the test crashed before writing the file
+  file_path = _file_path(when)
+  if file_path.exists():
+    try:
+      with open(file_path, 'rb') as file:
+        report_info = file.read()
+        report_info = pickle.loads(report_info)
+        test_info[when] = report_info
+    except pickle.PickleError:
+      test_info['fatal_error'] = f'FATAL ERROR in pytest_parallel : unable to decode {file_path}'
+  else: # Supposedly not found because the test crashed before writing the file
     collect_longrepr = []
     msg = f'Error: the test crashed. '
     red = 31
@@ -63,8 +64,6 @@ for when in ('setup', 'call', 'teardown'):
                        'duration': 0, } # unable to report accurately
 
     already_failed = True
-  except pickle.PickleError:
-    test_info['fatal_error'] = f'FATAL ERROR in pytest_parallel : unable to decode {file_path}'
 
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

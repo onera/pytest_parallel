@@ -5,13 +5,13 @@ import subprocess
 import socket
 import pickle
 from pathlib import Path
-from .utils.socket import recv as socket_recv, setup_socket
+from .utils.socket import recv as socket_recv
+from .utils.socket import setup_socket
 from .utils.items import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index, mark_skip
 from .utils.file import remove_exotic_chars, create_folders
 from .algo import partition
 from .static_scheduler_utils import group_items_by_parallel_steps
 from mpi4py import MPI
-import numpy as np
 
 def mpi_command(current_proc, n_proc):
     mpi_vendor = MPI.get_vendor()[0]
@@ -43,7 +43,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
         cmd += mpi_command(current_proc, item.n_proc)
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file} 2>&1'
-        cmd += f' ; python -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
+        cmd += f' ; python3 -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
         cmd += ')'
         cmds.append(cmd)
         current_proc += item.n_proc
@@ -74,18 +74,17 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
 
 def receive_items(items, session, socket, n_item_to_recv):
     # > Precondition: Items must keep their original order to pick up the right item at the reception
-    original_indices = np.array([item.original_index for item in items])
-    assert (original_indices==np.arange(len(items))).all()
+    original_indices = [item.original_index for item in items]
+    assert original_indices==list(range(len(items)))
 
     while n_item_to_recv>0:
         conn, addr = socket.accept()
         with conn:
             msg = socket_recv(conn)
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
-        #print(f"{test_info=}")
         if 'signal_info' in test_info:
             print('signal_info= ',test_info['signal_info'])
-            break;
+            break
         else:
             test_idx = test_info['test_idx']
             if test_info['fatal_error'] is not None:
