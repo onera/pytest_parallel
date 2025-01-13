@@ -42,7 +42,7 @@ def _get_my_ip_address():
   hostname = socket.gethostname()
 
   assert command_exists('tracepath'), 'pytest_parallel SLURM scheduler: command `tracepath` is not available'
-  cmd = ['tracepath','-4','-n',hostname]
+  cmd = ['tracepath','-n',hostname]
   r = subprocess.run(cmd, stdout=subprocess.PIPE)
   assert r.returncode==0, f'pytest_parallel SLURM scheduler: error running command `{" ".join(cmd)}`'
   ips = r.stdout.decode("utf-8")
