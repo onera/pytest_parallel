@@ -92,19 +92,9 @@ class SequentialScheduler:
     def pytest_runtest_protocol(self, item, nextitem):
         if self.barrier_at_test_start:
             self.global_comm.barrier()
-        #print(f'pytest_runtest_protocol beg {MPI.COMM_WORLD.rank=}')
         _ = yield
-        #print(f'pytest_runtest_protocol end {MPI.COMM_WORLD.rank=}')
         if self.barrier_at_test_end:
             self.global_comm.barrier()
-
-    #@pytest.hookimpl(tryfirst=True)
-    #def pytest_runtest_protocol(self, item, nextitem):
-    #    if self.barrier_at_test_start:
-    #        self.global_comm.barrier()
-    #    print(f'pytest_runtest_protocol beg {MPI.COMM_WORLD.rank=}')
-    #    if item.sub_comm == MPI.COMM_NULL:
-    #        return True # for this hook, `firstresult=True` so returning a non-None will stop other hooks to run
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
