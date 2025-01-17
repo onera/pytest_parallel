@@ -20,5 +20,3 @@ def group_items_by_parallel_steps(items, n_workers):
                 remaining_n_procs_by_step += [n_workers - item.n_proc]
 
     return items_by_step, items_to_skip
-
-

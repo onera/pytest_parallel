@@ -18,7 +18,7 @@ authors = [
     {name = "Berenger Berthoul", email = "berenger.berthoul@onera.fr"},
 ]
 maintainers = [
-    {name = "Bruno Maugars", email = "bruno.maugars@onera.fr"},
+    {name = "Berenger Berthoul", email = "bruno.maugars@onera.fr"},
 ]
 license = {text = "Mozilla Public License 2.0"}
 keywords = [
@@ -52,7 +52,7 @@ dependencies = [
     "mpi4py",
     "numpy",
 ]
-version = "1.2.0"
+version = "1.3.0"
 
 [project.urls]
 Homepage = "https://github.com/onera/pytest_parallel"

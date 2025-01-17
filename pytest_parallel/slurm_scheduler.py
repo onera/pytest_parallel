@@ -1,87 +1,31 @@
-import pytest
 import subprocess
 import socket
 import pickle
-from pathlib import Path
-from . import socket_utils
-from .utils import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index
+
+import pytest
+
+from .utils.socket import recv as socket_recv
+from .utils.socket import setup_socket
+from .utils.items import add_n_procs, run_item_test, mark_original_index, mark_skip
+from .utils.file import remove_exotic_chars, create_folders
 from .algo import partition
 
-
-def mark_skip(item, ntasks):
-    n_proc_test = get_n_proc_for_test(item)
-    skip_msg = f"Not enough procs to execute: {n_proc_test} required but only {ntasks} available"
-    item.add_marker(pytest.mark.skip(reason=skip_msg), append=False)
-    item.marker_mpi_skip = True
-
-def replace_sub_strings(s, subs, replacement):
-  res = s
-  for sub in subs:
-    res = res.replace(sub,replacement)
-  return res
-
-def remove_exotic_chars(s):
-  return replace_sub_strings(str(s), ['[',']','/', ':'], '_')
-
-def parse_job_id_from_submission_output(s):
-    # At this point, we are trying to guess -_-
-    # Here we supposed that the command for submitting the job
-    #    returned string with only one number,
-    #    and that this number is the job id
-    import re
-    return int(re.search(r'\d+', str(s)).group())
-
-
-# https://stackoverflow.com/a/34177358
-def command_exists(cmd_name):
-    """Check whether `name` is on PATH and marked as executable."""
-    from shutil import which
-    return which(cmd_name) is not None
-
-def _get_my_ip_address():
-  hostname = socket.gethostname()
-
-  assert command_exists('tracepath'), 'pytest_parallel SLURM scheduler: command `tracepath` is not available'
-  cmd = ['tracepath','-4','-n',hostname]
-  r = subprocess.run(cmd, stdout=subprocess.PIPE)
-  assert r.returncode==0, f'pytest_parallel SLURM scheduler: error running command `{" ".join(cmd)}`'
-  ips = r.stdout.decode("utf-8")
-
-  try:
-    my_ip = ips.split('\n')[0].split(':')[1].split()[0]
-  except:
-    assert 0, f'pytest_parallel SLURM scheduler: error parsing result `{ips}` of command `{" ".join(cmd)}`'
-  import ipaddress
-  try:
-    ipaddress.ip_address(my_ip)
-  except ValueError:
-    assert 0, f'pytest_parallel SLURM scheduler: error parsing result `{ips}` of command `{" ".join(cmd)}`'
-
-  return my_ip
-
-
-def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
-    # Find IP our address
-    SCHEDULER_IP_ADDRESS = _get_my_ip_address()
-
-    # setup master's socket
-    socket.bind((SCHEDULER_IP_ADDRESS, 0)) # 0: let the OS choose an available port
-    socket.listen()
-    port = socket.getsockname()[1]
+def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntasks, slurm_conf):
+    SCHEDULER_IP_ADDRESS, port = setup_socket(socket)
 
     # generate SLURM header options
     if slurm_conf['file'] is not None:
-        with open(slurm_conf['file']) as f:
+        with open(slurm_conf['file'], encoding='utf-8') as f:
             slurm_header = f.read()
-        # Note: 
+        # Note:
         #    ntasks is supposed to be <= to the number of the ntasks submitted to slurm
         #    but since the header file can be arbitrary, we have no way to check at this point
     else:
         slurm_header  = '#!/bin/bash\n'
         slurm_header += '\n'
         slurm_header += '#SBATCH --job-name=pytest_parallel\n'
-        slurm_header += '#SBATCH --output=.pytest_parallel/slurm.%j.out\n'
-        slurm_header += '#SBATCH --error=.pytest_parallel/slurm.%j.err\n'
+        slurm_header += f'#SBATCH --output=.pytest_parallel/{session_folder}/slurm.out\n'
+        slurm_header += f'#SBATCH --error=.pytest_parallel/{session_folder}/slurm.err\n'
         for opt in slurm_conf['options']:
             slurm_header += f'#SBATCH {opt}\n'
         slurm_header += f'#SBATCH --ntasks={ntasks}'
@@ -92,56 +36,57 @@ def submit_items(items_to_run, socket, main_invoke_params, ntasks, slurm_conf):
     # launch srun for each item
     srun_options = slurm_conf['srun_options']
     if srun_options is None:
-      srun_options = ''
-    worker_flags=f"--_worker --_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port}"
+        srun_options = ''
+    socket_flags = f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port} --_session_folder={session_folder}"
     cmds = ''
-    if slurm_conf['additional_cmds'] is not None:
-        cmds += slurm_conf['additional_cmds'] + '\n'
+    if slurm_conf['init_cmds'] is not None:
+        cmds += slurm_conf['init_cmds'] + '\n'
     for item in items:
         test_idx = item.original_index
-        test_out_file_base = f'.pytest_parallel/{remove_exotic_chars(item.nodeid)}'
-        cmd =  f'srun {srun_options} --exclusive --ntasks={item.n_proc} -l'
-        cmd += f' python3 -u -m pytest -s {worker_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
-        cmd += f' > {test_out_file_base} 2>&1'
-        cmd += ' &\n' # launch everything in parallel
+        test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
+        cmd = '('
+        cmd += f'srun {srun_options}'
+        cmd +=  ' --exclusive'
+        cmd +=  ' --kill-on-bad-exit=1' # make fatal errors (e.g. segfault) kill the whole srun step. Else, deadlock (at least with Intel MPI)
+        cmd += f' --ntasks={item.n_proc}'
+        cmd +=  ' --label' # Prepend task number to lines of stdout/err
+        cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
+        cmd += f' > {test_out_file} 2>&1'
+        cmd += f' ; python3 -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
+        cmd +=  ')'
+        cmd +=  ' &\n' # launch everything in parallel
         cmds += cmd
     cmds += 'wait\n'
 
     job_cmds = f'{slurm_header}\n\n{cmds}'
-    Path('.pytest_parallel').mkdir(exist_ok=True)
-    with open('.pytest_parallel/job.sh','w') as f:
-      f.write(job_cmds)
+
+    with open(f'.pytest_parallel/{session_folder}/job.sh','w', encoding='utf-8') as f:
+        f.write(job_cmds)
 
     # submit SLURM job
-    with open('.pytest_parallel/env_vars.sh','wb') as f:
-      f.write(pytest._pytest_parallel_env_vars)
+    with open(f'.pytest_parallel/{session_folder}/env_vars.sh','wb') as f:
+        f.write(pytest._pytest_parallel_env_vars)
 
-    if slurm_conf['sub_command'] is None:
-        if slurm_conf['export_env']:
-            sbatch_cmd = 'sbatch --parsable --export-file=.pytest_parallel/env_vars.sh .pytest_parallel/job.sh'
-        else:
-            sbatch_cmd = 'sbatch --parsable .pytest_parallel/job.sh'
+    if slurm_conf['export_env']:
+        sbatch_cmd = f'sbatch --parsable --export-file=.pytest_parallel/{session_folder}/env_vars.sh .pytest_parallel/{session_folder}/job.sh'
     else:
-        sbatch_cmd = slurm_conf['sub_command'] + ' .pytest_parallel/job.sh'
+        sbatch_cmd = f'sbatch --parsable .pytest_parallel/{session_folder}/job.sh'
 
     p = subprocess.Popen([sbatch_cmd], shell=True, stdout=subprocess.PIPE)
     print('\nSubmitting tests to SLURM...')
     returncode = p.wait()
     assert returncode==0, f'Error when submitting to SLURM with `{sbatch_cmd}`'
 
-    if slurm_conf['sub_command'] is None:
-        slurm_job_id = int(p.stdout.read())
-    else:
-        slurm_job_id = parse_job_id_from_submission_output(p.stdout.read())
+    slurm_job_id = int(p.stdout.read())
 
     print(f'SLURM job {slurm_job_id} has been submitted')
     return slurm_job_id
 
 def receive_items(items, session, socket, n_item_to_recv):
     while n_item_to_recv>0:
-        conn, addr = socket.accept()
+        conn, _ = socket.accept()
         with conn:
-            msg = socket_utils.recv(conn)
+            msg = socket_recv(conn)
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
         test_idx = test_info['test_idx']
         if test_info['fatal_error'] is not None:
@@ -155,7 +100,7 @@ def receive_items(items, session, socket, n_item_to_recv):
         run_item_test(items[test_idx], nextitem, session)
         n_item_to_recv -= 1
 
-class ProcessScheduler:
+class SlurmScheduler:
     def __init__(self, main_invoke_params, ntasks, slurm_conf, detach):
         self.main_invoke_params = main_invoke_params
         self.ntasks             = ntasks
@@ -181,8 +126,7 @@ class ProcessScheduler:
             and not session.config.option.continue_on_collection_errors
         ):
             raise session.Interrupted(
-                "%d error%s during collection"
-                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+                f"{session.testsfailed} error{'s' if session.testsfailed != 1 else ''} during collection"
             )
 
         if session.config.option.collectonly:
@@ -207,17 +151,18 @@ class ProcessScheduler:
         # schedule tests to run
         n_item_to_receive = len(items_to_run)
         if n_item_to_receive > 0:
-          self.slurm_job_id = submit_items(items_to_run, self.socket, self.main_invoke_params, self.ntasks, self.slurm_conf)
-          if not self.detach: # The job steps are supposed to send their reports
-              receive_items(session.items, session, self.socket, n_item_to_receive)
+            session_folder = create_folders()
+            self.slurm_job_id = submit_items(items_to_run, self.socket, session_folder, self.main_invoke_params, self.ntasks, self.slurm_conf)
+            if not self.detach: # The job steps are supposed to send their reports
+                receive_items(session.items, session, self.socket, n_item_to_receive)
 
         return True
 
     @pytest.hookimpl()
-    def pytest_keyboard_interrupt(excinfo):
-        if excinfo.slurm_job_id is not None:
-            print(f'Calling `scancel {excinfo.slurm_job_id}`')
-            subprocess.run(['scancel',str(excinfo.slurm_job_id)])
+    def pytest_keyboard_interrupt(self, excinfo):
+        if self.slurm_job_id is not None:
+            print(f'Calling `scancel {self.slurm_job_id}`')
+            subprocess.run(['scancel',str(self.slurm_job_id)])
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item):

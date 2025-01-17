@@ -3,20 +3,18 @@
   by running it on a set of examples,
   then comparing it to template references
 """
-
-
-# pytest_parallel MUST NOT be plugged in its testing framework environement
-# it will be plugged by the framework when needed (see `run_pytest_parallel_test`)
-# (else we would use pytest_parallel to test pytest_parallel, which is logically wrong)
 import os
-pytest_plugins = os.getenv('PYTEST_PLUGINS')
-assert pytest_plugins is None or 'pytest_parallel.plugin' not in pytest_plugins
-
 import sys
 import re
 import subprocess
 from pathlib import Path
 import pytest
+
+# pytest_parallel MUST NOT be plugged in its testing framework environement
+# it will be plugged by the framework when needed (see `run_pytest_parallel_test`)
+# (else we would use pytest_parallel to test pytest_parallel, which is logically wrong)
+pytest_plugins = os.getenv('PYTEST_PLUGINS')
+assert pytest_plugins is None or 'pytest_parallel.plugin' not in pytest_plugins
 
 
 root_dir = Path(__file__).parent
@@ -52,7 +50,7 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     stderr_file_path.unlink(missing_ok=True)
 
     test_env = os.environ.copy()
-    # To test pytest_parallel, we can need to launch pytest with it
+    # To test pytest_parallel, we need to launch pytest with pytest_parallel as a plugin:
     if "PYTEST_DISABLE_PLUGIN_AUTOLOAD" not in test_env:
         test_env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     cmd = f"mpiexec -n {n_workers} pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
@@ -68,10 +66,10 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
 
 
 param_scheduler = ["sequential", "static", "dynamic"]
-# TODO "slurm" scheduler
+# TODO "slurm", "shell" scheduler
 #param_scheduler = ["slurm"]
 if sys.platform == "win32":
-  param_scheduler = ["sequential", "static"]
+    param_scheduler = ["sequential", "static"]
 
 # fmt: off
 @pytest.mark.parametrize("scheduler", param_scheduler)
@@ -81,28 +79,28 @@ class TestPytestParallel:
     def test_01(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_one_proc'      , 1, scheduler, capfd) # need at least 1 proc
     def test_02(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_one_proc'      , 2, scheduler, capfd) # 2 tests executing concurrently
     def test_04(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_one_proc'      , 4, scheduler, capfd) # 2 tests executing concurrently, 2 procs do nothing
-  
+
     def test_05(self, scheduler, capfd): run_pytest_parallel_test('two_fail_tests_one_proc'         , 1, scheduler, capfd) # same but failing
     def test_06(self, scheduler, capfd): run_pytest_parallel_test('two_fail_tests_one_proc'         , 2, scheduler, capfd)
     def test_07(self, scheduler, capfd): run_pytest_parallel_test('two_fail_tests_one_proc'         , 4, scheduler, capfd)
-  
+
     def test_08(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_two_procs'     , 2, scheduler, capfd) # need at least 2 procs
     def test_09(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_two_procs'     , 4, scheduler, capfd) # 4 tests (needing 2 procs each) executing concurrently
     def test_10(self, scheduler, capfd): run_pytest_parallel_test('two_success_tests_two_procs'     , 1, scheduler, capfd, suffix='_skip') # the two test will be skipped (not enough procs)
-  
+
     def test_11(self, scheduler, capfd): run_pytest_parallel_test('two_fail_tests_two_procs'        , 2, scheduler, capfd) # same but failing
     def test_12(self, scheduler, capfd): run_pytest_parallel_test('two_fail_tests_two_procs'        , 4, scheduler, capfd)
     def test_13(self, scheduler, capfd): run_pytest_parallel_test('two_fail_tests_two_procs'        , 1, scheduler, capfd, suffix='_skip')
-  
+
     def test_14(self, scheduler, capfd): run_pytest_parallel_test('success_0_fail_1'                , 2, scheduler, capfd) # one test failing (succeed one rank 0, fail on rank 1)
-  
+
     def test_15(self, scheduler, capfd): run_pytest_parallel_test('two_success_fail_tests_two_procs', 2, scheduler, capfd) # one test succeeds, one test fails
     def test_16(self, scheduler, capfd): run_pytest_parallel_test('two_success_fail_tests_two_procs', 4, scheduler, capfd) # same, more procs
-  
+
     def test_17(self, scheduler, capfd): run_pytest_parallel_test('fixture_error'                   , 1, scheduler, capfd) # check that fixture errors are correctly reported
-  
-    def test_18(self, scheduler, capfd): run_pytest_parallel_test('parametrize'                     , 2, scheduler, capfd) # check the parametrize API 
-  
+
+    def test_18(self, scheduler, capfd): run_pytest_parallel_test('parametrize'                     , 2, scheduler, capfd) # check the parametrize API
+
     def test_19(self, scheduler, capfd): run_pytest_parallel_test('scheduling'                      , 4, scheduler, capfd) # check 'real' case
     def test_20(self, scheduler, capfd): run_pytest_parallel_test('fail_complex_assert_two_procs'   , 2, scheduler, capfd) # check 'complex' error message
 # fmt: on

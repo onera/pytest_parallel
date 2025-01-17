@@ -16,10 +16,10 @@ jobs:
   pylint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: mpi4py/setup-mpi@v1
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "3.10"
     - name: Install dependencies
@@ -30,7 +30,7 @@ jobs:
         pip install -r *.egg-info/requires.txt
     - name: Analysing the code with pylint
       run: |
-        pylint --unsafe-load-any-extension=y --disable=fixme $(git ls-files '*.py') || true
+        pylint --unsafe-load-any-extension=y --disable=fixme $(git ls-files "pytest_parallel/*.py" "test/*.py") || true
 
   build:
     needs: [pylint]
@@ -67,11 +67,18 @@ jobs:
             mpi: intelmpi
           - os: ubuntu-latest
             mpi: msmpi
+          # mpich seems broken on Ubuntu
           - os: ubuntu-latest
             py-version: 3.8
             mpi: mpich
           - os: ubuntu-latest
             py-version: 3.9
+            mpi: mpich
+          - os: ubuntu-latest
+            py-version: 3.10
+            mpi: mpich
+          - os: ubuntu-latest
+            py-version: 3.11
             mpi: mpich
     name: ${{ matrix.mpi }} - ${{matrix.py-version}} - ${{matrix.os}}
     steps:

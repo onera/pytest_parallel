@@ -1,5 +1,5 @@
-import pytest_parallel
 import time
+import pytest_parallel
 
 # time_base = 1.0
 time_base = 0.01

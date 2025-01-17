@@ -45,8 +45,8 @@ def gather_report_on_local_rank_0(report):
     del report.sub_comm  # No need to keep it in the report
     # Furthermore we need to serialize the report
     # and mpi4py does not know how to serialize report.sub_comm
-    i_sub_rank = sub_comm.Get_rank()
-    n_sub_rank = sub_comm.Get_size()
+    i_sub_rank = sub_comm.rank
+    n_sub_rank = sub_comm.size
 
     if (
         report.outcome != "skipped"
