@@ -1,5 +1,6 @@
-import pytest
 import sys
+
+import pytest
 from mpi4py import MPI
 
 from .algo import partition, lower_bound
@@ -11,7 +12,7 @@ from .static_scheduler_utils import group_items_by_parallel_steps
 
 def mark_skip(item):
     comm = MPI.COMM_WORLD
-    n_rank = comm.Get_size()
+    n_rank = comm.size
     n_proc_test = get_n_proc_for_test(item)
     skip_msg = f"Not enough procs to execute: {n_proc_test} required but only {n_rank} available"
     item.add_marker(pytest.mark.skip(reason=skip_msg), append=False)
@@ -38,8 +39,7 @@ def create_sub_comm_of_size(global_comm, n_proc, mpi_comm_creation_function):
         assert 0, 'Unknown MPI communicator creation function. Available: `MPI_Comm_create`, `MPI_Comm_split`'
 
 def create_sub_comms_for_each_size(global_comm, mpi_comm_creation_function):
-    i_rank = global_comm.Get_rank()
-    n_rank = global_comm.Get_size()
+    n_rank = global_comm.size
     sub_comms = [None] * n_rank
     for i in range(0,n_rank):
         n_proc = i+1
@@ -48,8 +48,7 @@ def create_sub_comms_for_each_size(global_comm, mpi_comm_creation_function):
 
 
 def add_sub_comm(items, global_comm, test_comm_creation, mpi_comm_creation_function):
-    i_rank = global_comm.Get_rank()
-    n_rank = global_comm.Get_size()
+    n_rank = global_comm.size
 
     # Strategy 'by_rank': create one sub-communicator by size, from sequential (size=1) to n_rank
     if test_comm_creation == 'by_rank':
@@ -109,7 +108,7 @@ class SequentialScheduler:
         _ = yield
         # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED)
         # when no test run on non-master
-        if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
+        if self.global_comm.rank != 0 and session.testscollected == 0:
             session.testscollected = 1
         return True
 
@@ -132,7 +131,7 @@ class SequentialScheduler:
 
 
 def prepare_items_to_run(items, comm):
-    i_rank = comm.Get_rank()
+    i_rank = comm.rank
 
     items_to_run = []
 
@@ -164,7 +163,7 @@ def prepare_items_to_run(items, comm):
 
 
 def items_to_run_on_this_proc(items_by_steps, items_to_skip, comm):
-    i_rank = comm.Get_rank()
+    i_rank = comm.rank
 
     items = []
 
@@ -200,14 +199,13 @@ class StaticScheduler:
             and not session.config.option.continue_on_collection_errors
         ):
             raise session.Interrupted(
-                "%d error%s during collection"
-                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+                f"{session.testsfailed} error{'s' if session.testsfailed != 1 else ''} during collection"
             )
 
         if session.config.option.collectonly:
             return True
 
-        n_workers = self.global_comm.Get_size()
+        n_workers = self.global_comm.size
 
         add_n_procs(session.items)
 
@@ -217,12 +215,12 @@ class StaticScheduler:
             items_by_steps, items_to_skip, self.global_comm
         )
 
-        for i, item in enumerate(items):
+        for item in items:
             nextitem = None
             run_item_test(item, nextitem, session)
 
         # prevent return value being non-zero (ExitCode.NO_TESTS_COLLECTED) when no test run on non-master
-        if self.global_comm.Get_rank() != 0 and session.testscollected == 0:
+        if self.global_comm.rank != 0 and session.testscollected == 0:
             session.testscollected = 1
         return True
 
@@ -244,8 +242,8 @@ class StaticScheduler:
         gather_report_on_local_rank_0(report)
 
         # master ranks of each sub_comm must send their report to rank 0
-        if sub_comm.Get_rank() == 0:  # only master are concerned
-            if self.global_comm.Get_rank() != 0:  # if master is not global master, send
+        if sub_comm.rank == 0:  # only master are concerned
+            if self.global_comm.rank != 0:  # if master is not global master, send
                 self.global_comm.send(report, dest=0)
             elif report.master_running_proc != 0:  # else, recv if test run remotely
                 # In the line below, MPI.ANY_TAG will NOT clash with communications outside the framework because self.global_comm is private
@@ -342,7 +340,7 @@ def wait_test_to_complete(items_to_run, session, available_procs, inter_comm):
     for sub_rank in sub_ranks:
         if sub_rank != first_rank_done:
             rank_original_idx = inter_comm.recv(source=sub_rank, tag=WORK_DONE_TAG)
-            assert (rank_original_idx == original_idx) # sub_rank is supposed to have worked on the same test
+            assert rank_original_idx == original_idx # sub_rank is supposed to have worked on the same test
 
     # the procs are now available
     for sub_rank in sub_ranks:
@@ -406,8 +404,7 @@ class DynamicScheduler:
             and not session.config.option.continue_on_collection_errors
         ):
             raise session.Interrupted(
-                "%d error%s during collection"
-                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+                f"{session.testsfailed} error{'s' if session.testsfailed != 1 else ''} during collection"
             )
 
         if session.config.option.collectonly:
@@ -499,7 +496,7 @@ class DynamicScheduler:
                 sub_comm = report.sub_comm
                 gather_report_on_local_rank_0(report)
 
-                if sub_comm.Get_rank() == 0:  # if local master proc, send
+                if sub_comm.rank == 0:  # if local master proc, send
                     # The idea of the scheduler is the following:
                     #   The server schedules test over clients
                     #   A client executes the test then report to the server it is done

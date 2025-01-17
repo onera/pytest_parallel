@@ -1,11 +1,12 @@
-import pytest
 import subprocess
 import socket
 import pickle
-from pathlib import Path
+
+import pytest
+
 from .utils.socket import recv as socket_recv
 from .utils.socket import setup_socket
-from .utils.items import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index, mark_skip
+from .utils.items import add_n_procs, run_item_test, mark_original_index, mark_skip
 from .utils.file import remove_exotic_chars, create_folders
 from .algo import partition
 
@@ -14,9 +15,9 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
 
     # generate SLURM header options
     if slurm_conf['file'] is not None:
-        with open(slurm_conf['file']) as f:
+        with open(slurm_conf['file'], encoding='utf-8') as f:
             slurm_header = f.read()
-        # Note: 
+        # Note:
         #    ntasks is supposed to be <= to the number of the ntasks submitted to slurm
         #    but since the header file can be arbitrary, we have no way to check at this point
     else:
@@ -35,7 +36,7 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
     # launch srun for each item
     srun_options = slurm_conf['srun_options']
     if srun_options is None:
-      srun_options = ''
+        srun_options = ''
     socket_flags = f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port} --_session_folder={session_folder}"
     cmds = ''
     if slurm_conf['init_cmds'] is not None:
@@ -48,7 +49,7 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
         cmd +=  ' --exclusive'
         cmd +=  ' --kill-on-bad-exit=1' # make fatal errors (e.g. segfault) kill the whole srun step. Else, deadlock (at least with Intel MPI)
         cmd += f' --ntasks={item.n_proc}'
-        cmd +=  ' -l' # 
+        cmd +=  ' --label' # Prepend task number to lines of stdout/err
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file} 2>&1'
         cmd += f' ; python3 -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
@@ -59,12 +60,12 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
 
     job_cmds = f'{slurm_header}\n\n{cmds}'
 
-    with open(f'.pytest_parallel/{session_folder}/job.sh','w') as f:
-      f.write(job_cmds)
+    with open(f'.pytest_parallel/{session_folder}/job.sh','w', encoding='utf-8') as f:
+        f.write(job_cmds)
 
     # submit SLURM job
     with open(f'.pytest_parallel/{session_folder}/env_vars.sh','wb') as f:
-      f.write(pytest._pytest_parallel_env_vars)
+        f.write(pytest._pytest_parallel_env_vars)
 
     if slurm_conf['export_env']:
         sbatch_cmd = f'sbatch --parsable --export-file=.pytest_parallel/{session_folder}/env_vars.sh .pytest_parallel/{session_folder}/job.sh'
@@ -83,7 +84,7 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
 
 def receive_items(items, session, socket, n_item_to_recv):
     while n_item_to_recv>0:
-        conn, addr = socket.accept()
+        conn, _ = socket.accept()
         with conn:
             msg = socket_recv(conn)
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
@@ -125,8 +126,7 @@ class SlurmScheduler:
             and not session.config.option.continue_on_collection_errors
         ):
             raise session.Interrupted(
-                "%d error%s during collection"
-                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+                f"{session.testsfailed} error{'s' if session.testsfailed != 1 else ''} during collection"
             )
 
         if session.config.option.collectonly:
@@ -151,18 +151,18 @@ class SlurmScheduler:
         # schedule tests to run
         n_item_to_receive = len(items_to_run)
         if n_item_to_receive > 0:
-          session_folder = create_folders()
-          self.slurm_job_id = submit_items(items_to_run, self.socket, session_folder, self.main_invoke_params, self.ntasks, self.slurm_conf)
-          if not self.detach: # The job steps are supposed to send their reports
-              receive_items(session.items, session, self.socket, n_item_to_receive)
+            session_folder = create_folders()
+            self.slurm_job_id = submit_items(items_to_run, self.socket, session_folder, self.main_invoke_params, self.ntasks, self.slurm_conf)
+            if not self.detach: # The job steps are supposed to send their reports
+                receive_items(session.items, session, self.socket, n_item_to_receive)
 
         return True
 
     @pytest.hookimpl()
-    def pytest_keyboard_interrupt(excinfo):
-        if excinfo.slurm_job_id is not None:
-            print(f'Calling `scancel {excinfo.slurm_job_id}`')
-            subprocess.run(['scancel',str(excinfo.slurm_job_id)])
+    def pytest_keyboard_interrupt(self, excinfo):
+        if self.slurm_job_id is not None:
+            print(f'Calling `scancel {self.slurm_job_id}`')
+            subprocess.run(['scancel',str(self.slurm_job_id)])
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item):

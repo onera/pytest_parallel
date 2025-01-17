@@ -30,7 +30,7 @@ jobs:
         pip install -r *.egg-info/requires.txt
     - name: Analysing the code with pylint
       run: |
-        pylint --unsafe-load-any-extension=y --disable=fixme $(git ls-files '*.py') || true
+        pylint --unsafe-load-any-extension=y --disable=fixme $(git ls-files "pytest_parallel/*.py" "test/*.py") || true
 
   build:
     needs: [pylint]

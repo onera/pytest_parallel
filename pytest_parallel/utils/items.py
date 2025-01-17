@@ -1,13 +1,13 @@
-import sys
 import pytest
 from _pytest.nodes import Item
 
+
 def get_n_proc_for_test(item: Item) -> int :
- if not hasattr(item, 'callspec'): return 1 # no callspec, so no `comm` => sequential test case
- try:
-   return item.callspec.getparam('comm')
- except ValueError: # no `comm` => sequential test case
-   return 1
+    if not hasattr(item, 'callspec'): return 1 # no callspec, so no `comm` => sequential test case
+    try:
+        return item.callspec.getparam('comm')
+    except ValueError: # no `comm` => sequential test case
+        return 1
 
 
 def add_n_procs(items):

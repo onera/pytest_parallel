@@ -1,17 +1,17 @@
-import pytest
 import os
 import stat
 import subprocess
 import socket
 import pickle
-from pathlib import Path
+
+import pytest
+from mpi4py import MPI
+
 from .utils.socket import recv as socket_recv
 from .utils.socket import setup_socket
-from .utils.items import get_n_proc_for_test, add_n_procs, run_item_test, mark_original_index, mark_skip
+from .utils.items import add_n_procs, run_item_test, mark_original_index, mark_skip
 from .utils.file import remove_exotic_chars, create_folders
-from .algo import partition
 from .static_scheduler_utils import group_items_by_parallel_steps
-from mpi4py import MPI
 
 def mpi_command(current_proc, n_proc):
     mpi_vendor = MPI.get_vendor()[0]
@@ -25,7 +25,7 @@ def mpi_command(current_proc, n_proc):
     else:
         assert 0, f'Unknown MPI implementation "{mpi_vendor}"'
 
-def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_invoke_params, ntasks, i_step, n_step):
+def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_invoke_params, i_step, n_step):
     # sort item by comm size to launch bigger first (Note: in case SLURM prioritize first-received items)
     items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
 
@@ -36,7 +36,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
     socket_flags=f"--_scheduler_ip_address={SCHEDULER_IP_ADDRESS} --_scheduler_port={port} --_session_folder={session_folder}"
     cmds = []
     current_proc = 0
-    for i,item in enumerate(items):
+    for item in items:
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
         cmd = '('
@@ -59,10 +59,10 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
 
     ## 3. wait everyone
     script += '\nwait\n'
-   
+
     script_path = f'.pytest_parallel/{session_folder}/pytest_static_sched_{i_step+1}.sh'
-    with open(script_path,'w') as f:
-      f.write(script)
+    with open(script_path,'w', encoding='utf-8') as f:
+        f.write(script)
 
     current_permissions = stat.S_IMODE(os.lstat(script_path).st_mode)
     os.chmod(script_path, current_permissions | stat.S_IXUSR)
@@ -78,7 +78,7 @@ def receive_items(items, session, socket, n_item_to_recv):
     assert original_indices==list(range(len(items)))
 
     while n_item_to_recv>0:
-        conn, addr = socket.accept()
+        conn, _ = socket.accept()
         with conn:
             msg = socket_recv(conn)
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
@@ -122,8 +122,7 @@ class ShellStaticScheduler:
             and not session.config.option.continue_on_collection_errors
         ):
             raise session.Interrupted(
-                "%d error%s during collection"
-                % (session.testsfailed, "s" if session.testsfailed != 1 else "")
+                f"{session.testsfailed} error{'s' if session.testsfailed != 1 else ''} during collection"
             )
 
         if session.config.option.collectonly:
@@ -149,13 +148,13 @@ class ShellStaticScheduler:
         n_step = len(items_by_steps)
         for i_step,items in enumerate(items_by_steps):
             n_item_to_receive = len(items)
-            sub_process = submit_items(items, SCHEDULER_IP_ADDRESS, port, session_folder, self.main_invoke_params, self.ntasks, i_step, n_step)
+            sub_process = submit_items(items, SCHEDULER_IP_ADDRESS, port, session_folder, self.main_invoke_params, i_step, n_step)
             if not self.detach: # The job steps are supposed to send their reports
                 receive_items(session.items, session, self.socket, n_item_to_receive)
             returncode = sub_process.wait() # at this point, the sub-process should be done since items have been received
 
             # https://docs.pytest.org/en/stable/reference/exit-codes.html
-            # 0 means all passed, 1 means all executed, but some failed 
+            # 0 means all passed, 1 means all executed, but some failed
             assert returncode==0 or returncode==1 , f'Pytest internal error during step {i_step} of shell scheduler (error code {returncode})'
 
         return True

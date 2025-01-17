@@ -1,6 +1,5 @@
 import pytest
 import pytest_parallel
-from mpi4py import MPI
 
 
 @pytest_parallel.mark.parallel([1, 2])

@@ -11,13 +11,13 @@ server_port = int(sys.argv[2])
 test_idx = int(sys.argv[3])
 
 comm = MPI.COMM_WORLD
-print(f'start at {scheduler_ip}@{server_port} test {test_idx} at rank {comm.Get_rank()}/{comm.Get_size()} exec on {socket.gethostname()} - ',datetime.datetime.now())
+print(f'start at {scheduler_ip}@{server_port} test {test_idx} at rank {comm.rank}/{comm.size} exec on {socket.gethostname()} - ',datetime.datetime.now())
 
-if comm.Get_rank() == 0:
+if comm.rank == 0:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((scheduler_ip, server_port))
         #time.sleep(10+5*test_idx)
-        #msg = f'Hello from test {test_idx} at rank {comm.Get_rank()}/{comm.Get_size()} exec on {socket.gethostname()}'
+        #msg = f'Hello from test {test_idx} at rank {comm.rank}/{comm.size} exec on {socket.gethostname()}'
         #socket_utils.send(s, msg)
         info = {
             'test_idx': test_idx,

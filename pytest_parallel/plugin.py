@@ -7,11 +7,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 import argparse
+
 import pytest
 from _pytest.terminal import TerminalReporter
 
 class PytestParallelError(ValueError):
-  pass
+    pass
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -104,9 +105,9 @@ def pytest_configure(config):
     slurm_file = config.getoption('slurm_file')
     slurm_export_env = config.getoption('slurm_export_env')
     detach = config.getoption('detach')
-    if scheduler != 'slurm' and scheduler != 'shell':
+    if not scheduler in ['slurm', 'shell']:
         assert not is_worker, f'Internal pytest_parallel error `--_worker` not available with`--scheduler={scheduler}`'
-    if (scheduler == 'slurm' or scheduler == 'shell') and not is_worker:
+    if scheduler in ['slurm', 'shell'] and not is_worker:
         if n_workers is None:
             raise PytestParallelError(f'You need to specify `--n-workers` when `--scheduler={scheduler}`')
     if scheduler != 'slurm':
@@ -119,7 +120,7 @@ def pytest_configure(config):
         if slurm_file is not None:
             raise PytestParallelError('Option `--slurm-file` only available when `--scheduler=slurm`')
 
-    if (scheduler == 'shell' or scheduler == 'slurm') and not is_worker:
+    if scheduler in ['shell', 'slurm'] and not is_worker:
         from mpi4py import MPI
         if MPI.COMM_WORLD.size != 1:
             err_msg = 'Do not launch `pytest_parallel` on more that one process when `--scheduler=shell` or `--scheduler=slurm`.\n' \
@@ -142,7 +143,7 @@ def pytest_configure(config):
                 raise PytestParallelError('You cannot specify `--slurm-init-cmds` together with `--slurm-file`')
 
         if '-n=' in slurm_options or '--ntasks=' in slurm_options:
-                raise PytestParallelError('Do not specify `-n/--ntasks` in `--slurm-options` (it is deduced from the `--n-worker` value).')
+            raise PytestParallelError('Do not specify `-n/--ntasks` in `--slurm-options` (it is deduced from the `--n-worker` value).')
 
         from .slurm_scheduler import SlurmScheduler
 
@@ -154,7 +155,7 @@ def pytest_configure(config):
         ## pull apart `--slurm-options` for special treatement
         main_invoke_params = main_invoke_params.replace(f'--slurm-options={slurm_options}', '')
         for file_or_dir in config.option.file_or_dir:
-          main_invoke_params = main_invoke_params.replace(file_or_dir, '')
+            main_invoke_params = main_invoke_params.replace(file_or_dir, '')
         slurm_option_list = slurm_options.split() if slurm_options is not None else []
         slurm_conf = {
             'options'     : slurm_option_list,
@@ -172,7 +173,7 @@ def pytest_configure(config):
         # reconstruct complete invoke string
         main_invoke_params = _invoke_params(config.invocation_params.args)
         for file_or_dir in config.option.file_or_dir:
-          main_invoke_params = main_invoke_params.replace(file_or_dir, '')
+            main_invoke_params = main_invoke_params.replace(file_or_dir, '')
         plugin = ShellStaticScheduler(main_invoke_params, n_workers, detach)
     else:
         from mpi4py import MPI
@@ -190,7 +191,7 @@ def pytest_configure(config):
         elif scheduler == 'dynamic':
             inter_comm = spawn_master_process(global_comm)
             plugin = DynamicScheduler(global_comm, inter_comm)
-        elif (scheduler == 'slurm' or scheduler == 'shell') and is_worker:
+        elif scheduler in ['shell', 'slurm'] and is_worker:
             scheduler_ip_address = config.getoption('_scheduler_ip_address')
             scheduler_port = config.getoption('_scheduler_port')
             session_folder = config.getoption('_session_folder')
@@ -209,7 +210,7 @@ def pytest_configure(config):
 
         # Pytest relies on having a terminal reporter to decide on how to create error messages, see #12
         # Hence, register a terminal reporter that outputs to /dev/null
-        null_file = open(os.devnull,'w')
+        null_file = open(os.devnull,'w', encoding='utf-8')
         terminal_reporter = TerminalReporter(config, null_file)
         config.pluginmanager.register(terminal_reporter, "terminalreporter")
 
@@ -238,16 +239,16 @@ class CollectiveTemporaryDirectory:
     def __enter__(self):
         from mpi4py import MPI
         if self.comm != MPI.COMM_NULL: # TODO DEL once non-participating rank do not participate in fixtures either
-            rank = self.comm.Get_rank()
+            rank = self.comm.rank
             self.tmp_dir = tempfile.TemporaryDirectory() if rank == 0 else None
             self.tmp_path = Path(self.tmp_dir.name) if rank == 0 else None
             return self.comm.bcast(self.tmp_path, root=0)
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, ex_type, ex_value, traceback):
         from mpi4py import MPI
         if self.comm != MPI.COMM_NULL: # TODO DEL once non-participating rank do not participate in fixtures either
             self.comm.barrier()
-            if self.comm.Get_rank() == 0:
+            if self.comm.rank == 0:
                 self.tmp_dir.cleanup()
 
 

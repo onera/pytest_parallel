@@ -1,9 +1,9 @@
-import pytest
-
-from mpi4py import MPI
-
 from pathlib import Path
 import pickle
+
+import pytest
+from mpi4py import MPI
+
 from .utils.items import get_n_proc_for_test, run_item_test
 from .gather_report import gather_report_on_local_rank_0
 
@@ -32,7 +32,7 @@ class ProcessWorker:
 
         # check there is no file from a previous run
         if comm.rank == 0:
-            for when in {'fatal_error', 'setup', 'call', 'teardown'}:
+            for when in ['fatal_error', 'setup', 'call', 'teardown']:
                 path = self._file_path(when)
                 assert not path.exists(), f'INTERNAL FATAL ERROR in pytest_parallel: file "{path}" should not exist at this point'
 
@@ -40,10 +40,10 @@ class ProcessWorker:
         if comm.size != test_comm_size: # fatal error, SLURM and MPI do not interoperate correctly
             if comm.rank == 0:
                 error_info = f'FATAL ERROR in pytest_parallel with slurm scheduling: test `{item.nodeid}`' \
-                             f' uses a `comm` of size {test_comm_size} but was launched with size {comm.Get_size()}.\n' \
+                             f' uses a `comm` of size {test_comm_size} but was launched with size {comm.size}.\n' \
                              f' This generally indicates that `srun` does not interoperate correctly with MPI.'
                 file_path = self._file_path('fatal_error')
-                with open(file_path, "w") as f:
+                with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(error_info)
             return True
 
@@ -55,7 +55,7 @@ class ProcessWorker:
             assert 0, f'{item.test_info["fatal_error"]}'
 
         return True
-      
+
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_makereport(self, item):
         """
@@ -77,5 +77,5 @@ class ProcessWorker:
                        'longrepr': report.longrepr,
                        'duration': report.duration, }
         if sub_comm.rank == 0:
-            with open(self._file_path(report.when), "wb") as f:
+            with open(self._file_path(report.when), 'wb') as f:
                 f.write(pickle.dumps(report_info))
