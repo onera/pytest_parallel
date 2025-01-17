@@ -52,7 +52,7 @@ def run_pytest_parallel_test(test_name, n_workers, scheduler, capfd, suffix=""):
     stderr_file_path.unlink(missing_ok=True)
 
     test_env = os.environ.copy()
-    # To test pytest_parallel, we can need to launch pytest with it
+    # To test pytest_parallel, we need to launch pytest with pytest_parallel as a plugin:
     if "PYTEST_DISABLE_PLUGIN_AUTOLOAD" not in test_env:
         test_env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     cmd = f"mpiexec -n {n_workers} pytest -p pytest_parallel.plugin -s -ra -vv --color=no --scheduler={scheduler} {test_file_path}"
