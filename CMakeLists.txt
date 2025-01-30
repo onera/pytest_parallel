@@ -9,7 +9,7 @@ cmake_policy(SET CMP0074 NEW) # force find_package to take <PackageName>_ROOT va
 # Project
 # ----------------------------------------------------------------------
 project(
-  pytest_parallel VERSION 1.2.0
+  pytest_parallel
   DESCRIPTION "pytest_parallel extends PyTest to support parallel testing using mpi4py"
 )
 
