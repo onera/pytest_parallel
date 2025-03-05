@@ -107,6 +107,7 @@ def pytest_configure(config):
     detach = config.getoption('detach')
     if not scheduler in ['slurm', 'shell']:
         assert not is_worker, f'Internal pytest_parallel error `--_worker` not available with`--scheduler={scheduler}`'
+        assert not n_workers, f'pytest_parallel error `--n-workers` not available with`--scheduler={scheduler}`. Launch with `mpirun -np {n_workers}` to run in parallel'
     if scheduler in ['slurm', 'shell'] and not is_worker:
         if n_workers is None:
             raise PytestParallelError(f'You need to specify `--n-workers` when `--scheduler={scheduler}`')
