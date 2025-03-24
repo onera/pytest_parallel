@@ -1,6 +1,7 @@
 import subprocess
 import socket
 import pickle
+from pathlib import Path
 
 import pytest
 
@@ -44,6 +45,7 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
     for item in items:
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
+        test_out_file = str(Path(test_out_file).absolute()) # easier to find the file if absolute
         cmd = '('
         cmd += f'srun {srun_options}'
         cmd +=  ' --exclusive'

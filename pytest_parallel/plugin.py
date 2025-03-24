@@ -11,8 +11,7 @@ import argparse
 import pytest
 from _pytest.terminal import TerminalReporter
 
-class PytestParallelError(ValueError):
-    pass
+from .exception import PytestParallelUsageError, PytestParallelInternalError
 
 # --------------------------------------------------------------------------
 def pytest_addoption(parser):
@@ -58,13 +57,13 @@ def pytest_addoption(parser):
                                                 ' (because importing mpi4py.MPI makes the current process look like and MPI process,' \
                                                 ' and SLURM does not like that)'
         if os.getenv('I_MPI_MPIRUN') is not None:
-            err_msg =  'Internal pytest_parallel error: the environment variable I_MPI_MPIRUN is set' \
+            err_msg =  'The environment variable I_MPI_MPIRUN is set' \
                       f' (it has value "{os.getenv("I_MPI_MPIRUN")}"),\n' \
                        ' while pytest was invoked with "--scheduler=slurm".\n' \
                        ' This indicates that pytest was run through MPI, and SLURM generally does not like that.\n' \
                        ' With "--scheduler=slurm", just run `pytest` directly, not through `mpirun/mpiexec/srun`,\n' \
                        ' because it will launch MPI itself (you may want to use --n-workers=<number of processes>).'
-            raise PytestParallelError(err_msg)
+            raise PytestParallelInternalError(err_msg)
 
         r = subprocess.run(['env','--null'], stdout=subprocess.PIPE) # `--null`: end each output line with NUL, required by `sbatch --export-file`
 
@@ -110,16 +109,16 @@ def pytest_configure(config):
         assert not n_workers, f'pytest_parallel error `--n-workers` not available with`--scheduler={scheduler}`. Launch with `mpirun -np {n_workers}` to run in parallel'
     if scheduler in ['slurm', 'shell'] and not is_worker:
         if n_workers is None:
-            raise PytestParallelError(f'You need to specify `--n-workers` when `--scheduler={scheduler}`')
+            raise PytestParallelUsageError(f'You need to specify `--n-workers` when `--scheduler={scheduler}`')
     if scheduler != 'slurm':
         if slurm_options is not None:
-            raise PytestParallelError('Option `--slurm-options` only available when `--scheduler=slurm`')
+            raise PytestParallelUsageError('Option `--slurm-options` only available when `--scheduler=slurm`')
         if slurm_srun_options is not None:
-            raise PytestParallelError('Option `--slurms-run-options` only available when `--scheduler=slurm`')
+            raise PytestParallelUsageError('Option `--slurms-run-options` only available when `--scheduler=slurm`')
         if slurm_init_cmds is not None:
-            raise PytestParallelError('Option `--slurm-init-cmds` only available when `--scheduler=slurm`')
+            raise PytestParallelUsageError('Option `--slurm-init-cmds` only available when `--scheduler=slurm`')
         if slurm_file is not None:
-            raise PytestParallelError('Option `--slurm-file` only available when `--scheduler=slurm`')
+            raise PytestParallelUsageError('Option `--slurm-file` only available when `--scheduler=slurm`')
 
     if scheduler in ['shell', 'slurm'] and not is_worker:
         from mpi4py import MPI
@@ -127,24 +126,24 @@ def pytest_configure(config):
             err_msg = 'Do not launch `pytest_parallel` on more that one process when `--scheduler=shell` or `--scheduler=slurm`.\n' \
                       '`pytest_parallel` will spawn MPI processes itself.\n' \
                      f'You may want to use --n-workers={MPI.COMM_WORLD.size}.'
-            raise PytestParallelError(err_msg)
+            raise PytestParallelUsageError(err_msg)
 
 
 
     if scheduler == 'slurm' and not is_worker:
         if slurm_options is None and slurm_file is None:
-            raise PytestParallelError('You need to specify either `--slurm-options` or `--slurm-file` when `--scheduler=slurm`')
+            raise PytestParallelUsageError('You need to specify either `--slurm-options` or `--slurm-file` when `--scheduler=slurm`')
         if slurm_options:
             if slurm_file:
-                raise PytestParallelError('You need to specify either `--slurm-options` or `--slurm-file`, but not both')
+                raise PytestParallelUsageError('You need to specify either `--slurm-options` or `--slurm-file`, but not both')
         if slurm_file:
             if slurm_options:
-                raise PytestParallelError('You need to specify either `--slurm-options` or `--slurm-file`, but not both')
+                raise PytestParallelUsageError('You need to specify either `--slurm-options` or `--slurm-file`, but not both')
             if slurm_init_cmds:
-                raise PytestParallelError('You cannot specify `--slurm-init-cmds` together with `--slurm-file`')
+                raise PytestParallelUsageError('You cannot specify `--slurm-init-cmds` together with `--slurm-file`')
 
         if '-n=' in slurm_options or '--ntasks=' in slurm_options:
-            raise PytestParallelError('Do not specify `-n/--ntasks` in `--slurm-options` (it is deduced from the `--n-worker` value).')
+            raise PytestParallelUsageError('Do not specify `-n/--ntasks` in `--slurm-options` (it is deduced from the `--n-worker` value).')
 
         from .slurm_scheduler import SlurmScheduler
 
