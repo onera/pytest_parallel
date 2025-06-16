@@ -35,9 +35,11 @@ def pytest_addoption(parser):
 
     if sys.version_info >= (3,9):
         parser.addoption('--slurm-export-env', dest='slurm_export_env', action=argparse.BooleanOptionalAction, default=True)
+        parser.addoption('--use-srun', dest='use_srun', action=argparse.BooleanOptionalAction, default=None, help='Launch MPI processes through srun (only possible when `--scheduler=shell`')
     else:
         parser.addoption('--slurm-export-env', dest='slurm_export_env', default=False, action='store_true')
         parser.addoption('--no-slurm-export-env', dest='slurm_export_env', action='store_false')
+        parser.addoption('--use-srun', dest='use_srun', default=None, action='store_true')
 
     parser.addoption('--detach', dest='detach', action='store_true', help='Detach SLURM jobs: do not send reports to the scheduling process (useful to launch slurm job.sh separately)')
 
@@ -104,7 +106,11 @@ def pytest_configure(config):
     is_worker = config.getoption('_worker')
     slurm_file = config.getoption('slurm_file')
     slurm_export_env = config.getoption('slurm_export_env')
+    use_srun = config.getoption('use_srun')
     detach = config.getoption('detach')
+    if scheduler != 'shell':
+        if use_srun is not None:
+            raise PytestParallelError('Option `--use-srun` only available when `--scheduler=shell`')
     if not scheduler in ['slurm', 'shell']:
         assert not is_worker, f'Internal pytest_parallel error `--_worker` not available with`--scheduler={scheduler}`'
         assert not n_workers, f'pytest_parallel error `--n-workers` not available with`--scheduler={scheduler}`. Launch with `mpirun -np {n_workers}` to run in parallel'
@@ -175,7 +181,7 @@ def pytest_configure(config):
         main_invoke_params = _invoke_params(config.invocation_params.args)
         for file_or_dir in config.option.file_or_dir:
             main_invoke_params = main_invoke_params.replace(file_or_dir, '')
-        plugin = ShellStaticScheduler(main_invoke_params, n_workers, detach)
+        plugin = ShellStaticScheduler(main_invoke_params, n_workers, detach, use_srun)
     else:
         from mpi4py import MPI
         from .mpi_reporter import SequentialScheduler, StaticScheduler, DynamicScheduler

@@ -13,19 +13,22 @@ from .utils.items import add_n_procs, run_item_test, mark_original_index, mark_s
 from .utils.file import remove_exotic_chars, create_folders
 from .static_scheduler_utils import group_items_by_parallel_steps
 
-def mpi_command(current_proc, n_proc):
-    mpi_vendor = MPI.get_vendor()[0]
-    if mpi_vendor == 'Intel MPI':
-        cmd =  f'I_MPI_PIN_PROCESSOR_LIST={current_proc}-{current_proc+n_proc-1}; '
-        cmd += f'mpiexec -np {n_proc}'
-        return cmd
-    elif mpi_vendor == 'Open MPI':
-        cores = ','.join([str(i) for i in range(current_proc,current_proc+n_proc)])
-        return f'mpiexec --cpu-list {cores} -np {n_proc}'
+def mpi_command(current_proc, n_proc, use_srun):
+    if use_srun:
+        return f'srun --exact --ntasks={n_proc}'
     else:
-        assert 0, f'Unknown MPI implementation "{mpi_vendor}"'
+        mpi_vendor = MPI.get_vendor()[0]
+        if mpi_vendor == 'Intel MPI':
+            cmd =  f'I_MPI_PIN_PROCESSOR_LIST={current_proc}-{current_proc+n_proc-1}; '
+            cmd += f'mpiexec -np {n_proc}'
+            return cmd
+        elif mpi_vendor == 'Open MPI':
+            cores = ','.join([str(i) for i in range(current_proc,current_proc+n_proc)])
+            return f'mpiexec --cpu-list {cores} -np {n_proc}'
+        else:
+            assert 0, f'Unknown MPI implementation "{mpi_vendor}"'
 
-def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_invoke_params, i_step, n_step):
+def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_invoke_params, use_srun, i_step, n_step):
     # sort item by comm size to launch bigger first (Note: in case SLURM prioritize first-received items)
     items = sorted(items_to_run, key=lambda item: item.n_proc, reverse=True)
 
@@ -40,7 +43,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
         cmd = '('
-        cmd += mpi_command(current_proc, item.n_proc)
+        cmd += mpi_command(current_proc, item.n_proc, use_srun)
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file} 2>&1'
         cmd += f' ; python3 -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
@@ -99,10 +102,11 @@ def receive_items(items, session, socket, n_item_to_recv):
             n_item_to_recv -= 1
 
 class ShellStaticScheduler:
-    def __init__(self, main_invoke_params, ntasks, detach):
+    def __init__(self, main_invoke_params, ntasks, detach, use_srun):
         self.main_invoke_params = main_invoke_params
         self.ntasks             = ntasks
         self.detach             = detach
+        self.use_srun           = use_srun
 
         self.socket             = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
 
@@ -148,7 +152,7 @@ class ShellStaticScheduler:
         n_step = len(items_by_steps)
         for i_step,items in enumerate(items_by_steps):
             n_item_to_receive = len(items)
-            sub_process = submit_items(items, SCHEDULER_IP_ADDRESS, port, session_folder, self.main_invoke_params, i_step, n_step)
+            sub_process = submit_items(items, SCHEDULER_IP_ADDRESS, port, session_folder, self.main_invoke_params, self.use_srun, i_step, n_step)
             if not self.detach: # The job steps are supposed to send their reports
                 receive_items(session.items, session, self.socket, n_item_to_receive)
             returncode = sub_process.wait() # at this point, the sub-process should be done since items have been received
