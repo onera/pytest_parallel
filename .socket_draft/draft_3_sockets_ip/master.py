@@ -1,14 +1,11 @@
 import socket
-#from socket_utils import send
 import socket_utils
 import subprocess
-from machine_conf import ip, port
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     # setup master's socket
-    s.bind((ip, port)) # port=0: let the OS choose an available port
-    s.listen()
-    port = s.getsockname()[1]
+    ip, port = socket_utils.setup_socket(s)
+    print(f'socket ip={ip}, port={port}')
 
     print('waiting for socket connection')
     conn, addr = s.accept()
