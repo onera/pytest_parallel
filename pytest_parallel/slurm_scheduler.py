@@ -97,7 +97,7 @@ def receive_items(items, session, socket, n_item_to_recv):
 
         # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
         nextitem = None  # not known at this point
-        run_item_test(items[test_idx], nextitem, session)
+        run_item_test(item, nextitem, session)
         n_item_to_recv -= 1
 
 class SlurmScheduler:

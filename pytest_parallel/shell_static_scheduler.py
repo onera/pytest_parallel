@@ -85,21 +85,17 @@ def receive_items(items, session, socket, n_item_to_recv):
         with conn:
             msg = socket_recv(conn)
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
-        if 'signal_info' in test_info:
-            print('signal_info= ',test_info['signal_info'])
-            break
-        else:
-            test_idx = test_info['test_idx']
-            if test_info['fatal_error'] is not None:
-                assert 0, f'{test_info["fatal_error"]}'
-            item = items[test_idx] # works because of precondition
-            item.sub_comm = None
-            item.info = test_info
+        test_idx = test_info['test_idx']
+        if test_info['fatal_error'] is not None:
+            assert 0, f'{test_info["fatal_error"]}'
+        item = items[test_idx] # works because of precondition
+        item.sub_comm = None
+        item.info = test_info
 
-            # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
-            nextitem = None  # not known at this point
-            run_item_test(item, nextitem, session)
-            n_item_to_recv -= 1
+        # "run" the test (i.e. trigger PyTest pipeline but do not really run the code)
+        nextitem = None  # not known at this point
+        run_item_test(item, nextitem, session)
+        n_item_to_recv -= 1
 
 class ShellStaticScheduler:
     def __init__(self, main_invoke_params, ntasks, detach, use_srun):
