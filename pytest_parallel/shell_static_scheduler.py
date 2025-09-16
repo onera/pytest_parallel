@@ -3,6 +3,7 @@ import stat
 import subprocess
 import socket
 import pickle
+from pathlib import Path
 
 import pytest
 from mpi4py import MPI
@@ -12,6 +13,7 @@ from .utils.socket import setup_socket
 from .utils.items import add_n_procs, run_item_test, mark_original_index, mark_skip
 from .utils.file import remove_exotic_chars, create_folders
 from .static_scheduler_utils import group_items_by_parallel_steps
+from .exception import PytestParallelEnvError
 
 def mpi_command(current_proc, n_proc, use_srun):
     if use_srun:
@@ -42,6 +44,7 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
     for item in items:
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
+        test_out_file = str(Path(test_out_file).absolute()) # easier to find the file if absolute
         cmd = '('
         cmd += mpi_command(current_proc, item.n_proc, use_srun)
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
@@ -109,6 +112,14 @@ class ShellStaticScheduler:
         self.use_srun           = use_srun
 
         self.socket             = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
+
+        # Check that MPI can be called in a subprocess (not the case with OpenMPI 4.0.5, see #17)
+        p = subprocess.run('mpirun -np 1 echo mpi_can_be_called_from_subprocess', shell=True)
+        if p.returncode != 0:
+            raise PytestParallelEnvError(
+                "Your MPI implementation does not handle MPI being called from a sub-process\n"
+                "Either update your MPI version or use another scheduler. See https://github.com/onera/pytest_parallel/issues/17"
+            )
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
