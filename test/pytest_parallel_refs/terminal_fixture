@@ -1,0 +1,28 @@
+[=]+ test session starts [=]+
+platform [^\n]*
+cachedir: [^\n]*
+?(?:metadata: [^\n]*)?
+rootdir: [^\n]*
+?(?:configfile: [^\n]*)?
+?(?:plugins: [^\n]*)?
+collecting ... [\s]*collected 1 item[\s]*
+?(?:Submitting tests to SLURM...)?
+?(?:SLURM job [^\n]* has been submitted)?
+
+[^\n]*test_fixture.py::test_fixture\[2\] FAILED
+
+[=]+ FAILURES [=]+
+[_]+ test_fixture\[2\] [_]+
+
+[-]+ On rank 1 of 2 [-]+
+my_fixture = 1
+
+    @pytest_parallel.mark.parallel\(2\)
+    def test_fixture\(my_fixture\):
+>       assert my_fixture == 0 # should fail on proc 1
+E       assert 1 == 0
+
+[^\n]*test_fixture.py:12: AssertionError
+[=]+ short test summary info [=]+
+FAILED [^\n]*test_fixture.py::test_fixture\[2\][^\n]*
+[=]+ 1 failed in [^\n]*s [=]+

@@ -99,10 +99,13 @@ class TestPytestParallel:
 
     def test_17(self, scheduler, capfd): run_pytest_parallel_test('fixture_error'                   , 1, scheduler, capfd) # check that fixture errors are correctly reported
 
-    def test_18(self, scheduler, capfd): run_pytest_parallel_test('parametrize'                     , 2, scheduler, capfd) # check the parametrize API
+    def test_18(self, scheduler, capfd): run_pytest_parallel_test('fixture'                         , 2, scheduler, capfd) # check that fixtures can depend on comm
+    def test_19(self, scheduler, capfd): run_pytest_parallel_test('fixture'                         , 4, scheduler, capfd) # check that fixtures can depend on comm, more procs
 
-    def test_19(self, scheduler, capfd): run_pytest_parallel_test('scheduling'                      , 4, scheduler, capfd) # check 'real' case
-    def test_20(self, scheduler, capfd): run_pytest_parallel_test('fail_complex_assert_two_procs'   , 2, scheduler, capfd) # check 'complex' error message
+    def test_20(self, scheduler, capfd): run_pytest_parallel_test('parametrize'                     , 2, scheduler, capfd) # check the parametrize API
+
+    def test_21(self, scheduler, capfd): run_pytest_parallel_test('scheduling'                      , 4, scheduler, capfd) # check 'real' case
+    def test_22(self, scheduler, capfd): run_pytest_parallel_test('fail_complex_assert_two_procs'   , 2, scheduler, capfd) # check 'complex' error message
 # fmt: on
 
 ## If one test fail, it may be useful to debug regex matching along the following lines

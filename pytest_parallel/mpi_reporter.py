@@ -72,7 +72,7 @@ def add_sub_comm(items, global_comm, test_comm_creation, mpi_comm_creation_funct
 
 class SequentialScheduler:
     def __init__(self, global_comm):
-        self.global_comm = global_comm.Dup()  # ensure that all communications within the framework are private to the framework
+        self.global_comm = global_comm.Dup() # ensure that all communications within the framework are private to the framework
 
         # These parameters are not accessible through the API, but are left here for tweaking and experimenting
         self.test_comm_creation = 'by_rank' # possible values : 'by_rank' | 'by_test'
@@ -82,6 +82,14 @@ class SequentialScheduler:
         if sys.platform == "win32":
             self.mpi_comm_creation_function = 'MPI_Comm_split' # because 'MPI_Comm_create' uses `Create_group`,
                                                                # that is not implemented in mpi4py for Windows
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_fixture_setup(self, fixturedef, request):
+        comm = request.node.sub_comm
+        if comm == MPI.COMM_NULL: # our process does not participate in the test: do not execute fixtures
+            # pytest needs `cached_result` to be non-None, so put something there, hoping it will never be used as a valid value
+            fixturedef.cached_result = (None, 'this_key_should_not_be_matched', RuntimeError('Pytest internal error from pytest_parallel::pytest_fixture_setup'))
+            return True
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(self, config, items):
@@ -97,7 +105,6 @@ class SequentialScheduler:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_pyfunc_call(self, pyfuncitem):
-        #print(f'pytest_pyfunc_call {MPI.COMM_WORLD.rank=}')
         # This is where the test is normally run.
         # Only run the test for the ranks that do participate in the test
         if pyfuncitem.sub_comm == MPI.COMM_NULL:
