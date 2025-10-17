@@ -245,7 +245,7 @@ class CollectiveTemporaryDirectory:
 
     def __enter__(self):
         from mpi4py import MPI
-        if self.comm != MPI.COMM_NULL: # TODO DEL once non-participating rank do not participate in fixtures either
+        if self.comm != MPI.COMM_NULL: # TODO 2025-10: should not be needed anymore > try deletion
             rank = self.comm.rank
             self.tmp_dir = tempfile.TemporaryDirectory() if rank == 0 else None
             self.tmp_path = Path(self.tmp_dir.name) if rank == 0 else None
@@ -253,7 +253,7 @@ class CollectiveTemporaryDirectory:
 
     def __exit__(self, ex_type, ex_value, traceback):
         from mpi4py import MPI
-        if self.comm != MPI.COMM_NULL: # TODO DEL once non-participating rank do not participate in fixtures either
+        if self.comm != MPI.COMM_NULL: # TODO 2025-10: should not be needed anymore > try deletion
             self.comm.barrier()
             if self.comm.rank == 0:
                 self.tmp_dir.cleanup()
