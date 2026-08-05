@@ -31,6 +31,8 @@ def pytest_addoption(parser):
     parser.addoption('--slurm-srun-options', dest='slurm_srun_options', type=str, help='list of SLURM srun options e.g. "--mem-per-cpu=4GB"')
     parser.addoption('--slurm-init-cmds', dest='slurm_init_cmds', type=str, help='list of commands to pass to SLURM job e.g. "source my_env.sh"')
     parser.addoption('--slurm-file', dest='slurm_file', type=str, help='Path to file containing header of SLURM job') # TODO DEL
+    parser.addoption('--max-concurrent-sruns', dest='max_concurrent_sruns', type=int, default=None,
+                     help='Max number of concurrent srun steps to avoid overwhelming SLURM controller (default: n-workers)')
 
     if sys.version_info >= (3,9):
         parser.addoption('--slurm-export-env', dest='slurm_export_env', action=argparse.BooleanOptionalAction, default=True)
@@ -107,6 +109,7 @@ def pytest_configure(config):
     slurm_export_env = config.getoption('slurm_export_env')
     use_srun = config.getoption('use_srun')
     detach = config.getoption('detach')
+    max_concurrent_sruns = config.getoption('max_concurrent_sruns')
     if scheduler != 'shell':
         if use_srun is not None:
             raise PytestParallelError('Option `--use-srun` only available when `--scheduler=shell`')
@@ -125,6 +128,8 @@ def pytest_configure(config):
             raise PytestParallelUsageError('Option `--slurm-init-cmds` only available when `--scheduler=slurm`')
         if slurm_file is not None:
             raise PytestParallelUsageError('Option `--slurm-file` only available when `--scheduler=slurm`')
+        if max_concurrent_sruns is not None:
+            raise PytestParallelUsageError('Option `--max-concurrent-sruns` only available when `--scheduler=slurm`')
 
     if scheduler in ['shell', 'slurm'] and not is_worker:
         from mpi4py import MPI
@@ -169,6 +174,7 @@ def pytest_configure(config):
             'init_cmds'   : slurm_init_cmds,
             'file'        : slurm_file,
             'export_env'  : slurm_export_env,
+            'max_concurrent_sruns': max_concurrent_sruns if max_concurrent_sruns is not None else n_workers,
         }
         plugin = SlurmScheduler(main_invoke_params, n_workers, slurm_conf, detach)
 

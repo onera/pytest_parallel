@@ -42,6 +42,8 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
     cmds = ''
     if slurm_conf['init_cmds'] is not None:
         cmds += slurm_conf['init_cmds'] + '\n'
+    max_concurrent = slurm_conf['max_concurrent_sruns']
+    cmds += f'_MAX_SRUN={max_concurrent}\n\n'
     for item in items:
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
@@ -58,6 +60,7 @@ def submit_items(items_to_run, socket, session_folder, main_invoke_params, ntask
         cmd +=  ')'
         cmd +=  ' &\n' # launch everything in parallel
         cmds += cmd
+        cmds += 'while [ "$(jobs -p | wc -w)" -ge "$_MAX_SRUN" ]; do sleep 1; done\n'
     cmds += 'wait\n'
 
     job_cmds = f'{slurm_header}\n\n{cmds}'
@@ -92,7 +95,10 @@ def receive_items(items, session, socket, n_item_to_recv):
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
         test_idx = test_info['test_idx']
         if test_info['fatal_error'] is not None:
-            assert 0, f'{test_info["fatal_error"]}'
+            from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntryNative
+            longrepr = ExceptionChainRepr([(ReprTraceback([ReprEntryNative(test_info['fatal_error'])]), None, None)])
+            test_info['setup'] = {'outcome': 'failed', 'longrepr': longrepr, 'duration': 0}
+            print(f'\n{test_info["fatal_error"]}')
         item = items[test_idx]
         item.sub_comm = None
         item.info = test_info
