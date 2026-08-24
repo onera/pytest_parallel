@@ -90,10 +90,7 @@ def receive_items(items, session, socket, n_item_to_recv):
         test_info = pickle.loads(msg) # the worker is supposed to have send a dict with the correct structured information
         test_idx = test_info['test_idx']
         if test_info['fatal_error'] is not None:
-            from _pytest._code.code import ExceptionChainRepr, ReprTraceback, ReprEntryNative
-            longrepr = ExceptionChainRepr([(ReprTraceback([ReprEntryNative(test_info['fatal_error'])], None, None), None, None)])
-            test_info['setup'] = {'outcome': 'failed', 'longrepr': longrepr, 'duration': 0}
-            print(f'\n{test_info["fatal_error"]}')
+            assert 0, f'{test_info["fatal_error"]}'
         item = items[test_idx] # works because of precondition
         item.sub_comm = None
         item.info = test_info
