@@ -55,6 +55,10 @@ def pytest_addoption(parser):
     #    we need to NOT import mpi4py when pytest_parallel
     #    is called with the SLURM scheduler
     #    because it can mess SLURM `srun`
+    # Alternative: if needed, this may be relaxed by instead using
+    #    import mpi4py
+    #    mpi4py.rc.initialize = False  # do not initialize MPI automatically
+    #    mpi4py.rc.finalize = False    # do not finalize MPI automatically
     if "--scheduler=slurm" in sys.argv:
         assert 'mpi4py.MPI' not in sys.modules, 'Internal pytest_parallel error: mpi4py.MPI should not be imported' \
                                                 ' when we are about to register an environment for SLURM' \
