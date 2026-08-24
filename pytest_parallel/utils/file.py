@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import datetime
 
 
 def replace_sub_strings(s, subs, replacement):
@@ -14,6 +15,8 @@ def remove_exotic_chars(s):
 
 def create_folders():
     Path('.pytest_parallel').mkdir(exist_ok=True)
-    session_folder_abs = Path(tempfile.mkdtemp(dir='.pytest_parallel')) # create a folder that did not already exist
+    now = str(datetime.datetime.now()).split('.')[0] # split(.)[0]: remove microseconds part
+    now = now.replace(' ','_').replace(':','-')
+    session_folder_abs = Path(tempfile.mkdtemp(dir='.pytest_parallel', prefix=now)) # create a folder that did not already exist
     Path(session_folder_abs/'_partial').mkdir()
     return session_folder_abs.name
