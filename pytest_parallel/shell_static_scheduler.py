@@ -17,16 +17,28 @@ from .exception import PytestParallelEnvError
 
 def mpi_command(current_proc, n_proc, use_srun):
     if use_srun:
-        return f'srun --exact --ntasks={n_proc}'
+        return f'srun --exact --ntasks={n_proc}', None
     else:
         mpi_vendor = MPI.get_vendor()[0]
         if mpi_vendor == 'Intel MPI':
             cmd =  f'I_MPI_PIN_PROCESSOR_LIST={current_proc}-{current_proc+n_proc-1}; '
             cmd += f'mpiexec -np {n_proc}'
-            return cmd
+            return cmd, None
         elif mpi_vendor == 'Open MPI':
-            cores = ','.join([str(i) for i in range(current_proc,current_proc+n_proc)])
-            return f'mpiexec --cpu-list {cores} -np {n_proc}'
+            import socket
+            import tempfile
+            hostname = socket.gethostname()
+            fd, rf_path = tempfile.mkstemp(prefix=f'rankfile_test_{current_proc}_', suffix='.txt', text=True)
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as rf:
+                    for i in range(n_proc):
+                        core = current_proc + i
+                        rf.write(f"rank {i}={hostname} slot={core}\n")
+            except Exception:
+                if os.path.exists(rf_path):
+                    os.remove(rf_path)
+                raise
+            return f"mpiexec --map-by rankfile:file={rf_path} -np {n_proc}", rf_path
         else:
             assert 0, f'Unknown MPI implementation "{mpi_vendor}"'
 
@@ -45,11 +57,20 @@ def submit_items(items_to_run, SCHEDULER_IP_ADDRESS, port, session_folder, main_
         test_idx = item.original_index
         test_out_file = f'.pytest_parallel/{session_folder}/{remove_exotic_chars(item.nodeid)}'
         test_out_file = str(Path(test_out_file).absolute()) # easier to find the file if absolute
+
+        # Récupération de la commande MPI et de l'éventuel fichier à nettoyer
+        mpi_cmd_str, rf_path_to_clean = mpi_command(current_proc, item.n_proc, use_srun)
+
         cmd = '('
-        cmd += mpi_command(current_proc, item.n_proc, use_srun)
+        cmd += mpi_cmd_str
         cmd += f' python3 -u -m pytest -s --_worker {socket_flags} {main_invoke_params} --_test_idx={test_idx} {item.config.rootpath}/{item.nodeid}'
         cmd += f' > {test_out_file} 2>&1'
         cmd += f' ; python3 -m pytest_parallel.send_report {socket_flags} --_test_idx={test_idx} --_test_name={test_out_file}'
+
+        # Destruction du rankfile temporaire une fois le test et le rapport terminés
+        if rf_path_to_clean is not None:
+            cmd += f' ; rm -f {rf_path_to_clean}'
+
         cmd += ')'
         cmds.append(cmd)
         current_proc += item.n_proc
