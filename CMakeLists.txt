@@ -3,6 +3,9 @@
 # ------------------------------------------------------------------------------
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 cmake_policy(SET CMP0074 NEW) # force find_package to take <PackageName>_ROOT variables into account
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.31.0")
+  cmake_policy(SET CMP0177 NEW) # install() DESTINATION paths are normalized
+endif()
 
 
 # ----------------------------------------------------------------------
