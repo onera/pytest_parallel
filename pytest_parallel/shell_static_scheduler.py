@@ -131,7 +131,8 @@ class ShellStaticScheduler:
         self.socket             = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # TODO close at the end
 
         # Check that MPI can be called in a subprocess (not the case with OpenMPI 4.0.5, see #17)
-        p = subprocess.run('mpirun -np 1 echo mpi_can_be_called_from_subprocess', shell=True)
+        mpi_launch = 'srun --exact --ntasks=1' if use_srun else 'mpirun -np 1'
+        p = subprocess.run(f'{mpi_launch} echo mpi_can_be_called_from_subprocess', shell=True)
         if p.returncode != 0:
             raise PytestParallelEnvError(
                 "Your MPI implementation does not handle MPI being called from a sub-process\n"
